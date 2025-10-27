@@ -1,0 +1,210 @@
+---
+- name: Bootstrap CW agent + start service + (optionally) run as a specific user
+  hosts: windows
+  gather_facts: no
+  vars:
+    # --- Your service + logs ---
+    app_service_name: "BrowserAutomationLogs"
+    cw_log_group_name: "/prod/Browser-Automation-Launcher/app"
+
+    # --- Optional: run a command as a specific user (from env) ---
+    run_user_actions: true
+    become_username: "{{ lookup('env', 'WINDOWS_USERNAME') | default('', true) }}"
+    become_password: "{{ lookup('env', 'WINDOWS_PASSWORD') | default('', true) }}"
+
+  # SSM connection (Windows)
+  vars_files: []
+  vars_prompt: []
+  any_errors_fatal: true
+
+  tasks:
+    - name: Verify SSM connectivity
+      ansible.windows.win_ping:
+
+    # ----------------------------
+    # 1) Ensure SSM Agent installed (idempotent)
+    # ----------------------------
+    - name: Check if SSM service exists
+      ansible.windows.win_shell: |
+        $svc = Get-Service -Name AmazonSSMAgent -ErrorAction SilentlyContinue
+        if ($null -eq $svc) { exit 1 } else { exit 0 }
+      register: ssm_present
+      changed_when: false
+      failed_when: false
+
+    - name: Install SSM Agent if missing (region-aware)
+      when: ssm_present.rc != 0
+      block:
+        - name: Get region from IMDSv2
+          ansible.windows.win_uri:
+            url: http://169.254.169.254/latest/api/token
+            method: PUT
+            headers:
+              X-aws-ec2-metadata-token-ttl-seconds: "21600"
+          register: imds_token
+          failed_when: false
+
+        - name: Read placement/region
+          ansible.windows.win_uri:
+            url: http://169.254.169.254/latest/meta-data/placement/region
+            headers: "{{ {'X-aws-ec2-metadata-token': imds_token.content} if imds_token.status_code == 200 else {} }}"
+          register: imds_region
+          failed_when: false
+
+        - name: Download SSM agent installer
+          ansible.windows.win_get_url:
+            url: "https://s3.amazonaws.com/amazon-ssm-{{ (imds_region.content | default('us-east-1')) | trim }}/latest/windows_amd64/AmazonSSMAgentSetup.exe"
+            dest: "C:\\Windows\\Temp\\AmazonSSMAgentSetup.exe"
+
+        - name: Install SSM agent
+          ansible.windows.win_package:
+            path: "C:\\Windows\\Temp\\AmazonSSMAgentSetup.exe"
+            arguments: "/S"
+            state: present
+
+    - name: Ensure SSM service running
+      ansible.windows.win_service:
+        name: AmazonSSMAgent
+        start_mode: auto
+        state: started
+
+    # ----------------------------
+    # 2) Install CloudWatch Agent (MSI with retry)
+    # ----------------------------
+    - name: Download CW agent MSI
+      ansible.windows.win_get_url:
+        url: https://s3.amazonaws.com/amazoncloudwatch-agent/windows/amd64/latest/amazon-cloudwatch-agent.msi
+        dest: C:\Windows\Temp\amazon-cloudwatch-agent.msi
+        force: yes
+
+    - name: Install CW agent (idempotent)
+      ansible.windows.win_package:
+        path: C:\Windows\Temp\amazon-cloudwatch-agent.msi
+        arguments: /qn /norestart
+        state: present
+
+    - name: Ensure CW agent service running
+      ansible.windows.win_service:
+        name: AmazonCloudWatchAgent
+        start_mode: auto
+        state: started
+
+    # ----------------------------
+    # 3) Read InstanceID and Name (IMDSv2)
+    # ----------------------------
+    - name: Get IMDS token
+      ansible.windows.win_uri:
+        url: http://169.254.169.254/latest/api/token
+        method: PUT
+        headers:
+          X-aws-ec2-metadata-token-ttl-seconds: "21600"
+      register: imds_t
+      failed_when: false
+
+    - name: Read instance-id
+      ansible.windows.win_uri:
+        url: http://169.254.169.254/latest/meta-data/instance-id
+        headers: "{{ {'X-aws-ec2-metadata-token': imds_t.content} if imds_t.status_code == 200 else {} }}"
+      register: iid
+
+    - name: Read Name tag (requires instance_metadata_tags=enabled on EC2)
+      ansible.windows.win_uri:
+        url: http://169.254.169.254/latest/meta-data/tags/instance/Name
+        headers: "{{ {'X-aws-ec2-metadata-token': imds_t.content} if imds_t.status_code == 200 else {} }}"
+      register: iname
+      failed_when: false
+
+    - name: Set stream prefix
+      ansible.builtin.set_fact:
+        cw_stream_prefix: "{{ (iid.content | default('unknown-id')) | trim }}/{{ (iname.content | default('UnknownName')) | trim }}"
+
+    # ----------------------------
+    # 4) Write local CW agent config (InstanceID/Name in streams)
+    # ----------------------------
+    - name: Render CW agent config
+      ansible.builtin.copy:
+        dest: C:\ProgramData\Amazon\AmazonCloudWatchAgent\config.json
+        content: |
+          {
+            "logs": {
+              "logs_collected": {
+                "files": {
+                  "collect_list": [
+                    {
+                      "file_path": "C:\\\\Users\\\\Administrator\\\\Documents\\\\applications\\\\browser-automation-launcher\\\\logs\\\\monitor.log",
+                      "log_group_name": "{{ cw_log_group_name }}",
+                      "log_stream_name": "{{ cw_stream_prefix }}/monitor.log",
+                      "timestamp_format": "%Y-%m-%d %H:%M:%S"
+                    },
+                    {
+                      "file_path": "C:\\\\Users\\\\Administrator\\\\Documents\\\\applications\\\\browser-automation-launcher\\\\logs\\\\app.log",
+                      "log_group_name": "{{ cw_log_group_name }}",
+                      "log_stream_name": "{{ cw_stream_prefix }}/app.log",
+                      "timestamp_format": "%Y-%m-%d %H:%M:%S"
+                    }
+                  ]
+                },
+                "windows_events": {
+                  "collect_list": [
+                    {
+                      "event_levels": ["ERROR","WARNING"],
+                      "event_format": "xml",
+                      "log_group_name": "{{ cw_log_group_name }}",
+                      "log_stream_name": "{{ cw_stream_prefix }}/EventLog/System",
+                      "event_name": "System"
+                    },
+                    {
+                      "event_levels": ["ERROR","WARNING"],
+                      "event_format": "xml",
+                      "log_group_name": "{{ cw_log_group_name }}",
+                      "log_stream_name": "{{ cw_stream_prefix }}/EventLog/Application",
+                      "event_name": "Application"
+                    }
+                  ]
+                }
+              }
+            },
+            "agent": { "metrics_collection_interval": 60, "run_as_user": "NT AUTHORITY\\\\SYSTEM", "debug": false }
+          }
+        force: yes
+
+    - name: Restart CW agent with local config
+      ansible.windows.win_shell: |
+        & "C:\Program Files\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent-ctl.ps1" -a stop
+        & "C:\Program Files\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent-ctl.ps1" -a start -m ec2 -c file:C:\ProgramData\Amazon\AmazonCloudWatchAgent\config.json
+
+    # ----------------------------
+    # 5) Ensure your app service is Automatic + Started
+    # ----------------------------
+    - name: Start your service
+      ansible.windows.win_service:
+        name: "{{ app_service_name }}"
+        start_mode: auto
+        state: started
+
+    # ----------------------------
+    # 6) (Optional) run a simple command as the specified user (become: runas)
+    # ----------------------------
+    - name: Verify user login via SSM become (optional)
+      when: run_user_actions | bool and (become_username | length > 0) and (become_password | length > 0)
+      ansible.windows.win_command: echo "Successfully logged in to {{ inventory_hostname }} as {{ become_username }} via SSM"
+      become: yes
+      vars:
+        ansible_become_method: runas
+        ansible_become_user: "{{ become_username }}"
+        ansible_become_password: "{{ become_password }}"
+
+    - name: whoami as that user (optional)
+      when: run_user_actions | bool and (become_username | length > 0) and (become_password | length > 0)
+      ansible.windows.win_command: whoami
+      register: whoami_result
+      become: yes
+      vars:
+        ansible_become_method: runas
+        ansible_become_user: "{{ become_username }}"
+        ansible_become_password: "{{ become_password }}"
+
+    - name: Show whoami result (optional)
+      when: run_user_actions | bool and whoami_result is defined
+      debug:
+        msg: "Current user: {{ whoami_result.stdout | default('n/a') }}"

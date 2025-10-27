@@ -1,0 +1,10 @@
+{
+  "id": "test-123",
+  "requester_id": "local-test",
+  "ttl_minutes": 10,
+  "chrome_args": ["--window-size=1920,1080"],
+  "proxy_config": {
+    "server": "http=proxy.example.com:8080;https=proxy.example.com:8080",
+    "bypass_list": "<-loopback>;*.local"
+  }
+}
