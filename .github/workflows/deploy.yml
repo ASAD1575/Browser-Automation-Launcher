@@ -44,11 +44,11 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
-    #   - name: Configure AWS (OIDC)
-    #     uses: aws-actions/configure-aws-credentials@v4
-    #     with:
-    #       role-to-assume: ${{ secrets.AWS_TERRAFORM_ROLE_ARN }}
-    #       aws-region: ${{ env.AWS_REGION }}
+      - name: Configure AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_TERRAFORM_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
       
       - name: Terraform migrate state to S3 backend
         run: terraform init -migrate-state -input=false
