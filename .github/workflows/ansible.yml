@@ -1,0 +1,93 @@
+name: Ansible Configuration
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'Iac/ansible/**'
+      - '.github/workflows/ansible.yml'
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - 'Iac/ansible/**'
+      - '.github/workflows/ansible.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        default: 'dev'
+        type: choice
+        options: [ dev, prod ]
+
+env:
+  TF_VERSION: '1.5.0'
+  TF_WORKING_DIR: './Iac/terraform'
+  AWS_REGION: us-east-1
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  ansible-configure:
+    name: 'Ansible Configuration'
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Configure AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_TERRAFORM_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install Ansible + deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install "ansible>=9" boto3 botocore
+          ansible-galaxy collection install amazon.aws community.aws ansible.windows community.windows
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init -input=false
+        working-directory: ${{ env.TF_WORKING_DIR }}
+
+      - name: Select Workspace
+        run: terraform workspace select ${{ github.event.inputs.environment || 'dev' }}
+        working-directory: ${{ env.TF_WORKING_DIR }}
+
+      - name: Capture Terraform Outputs (instances.json)
+        run: terraform output -json > ../ansible/inventory/instances.json
+        working-directory: ${{ env.TF_WORKING_DIR }}
+
+      - name: Load Ansible env (optional user run)
+        run: |
+          if [ -f .env.ansible ]; then
+            cat .env.ansible >> $GITHUB_ENV
+          fi
+        working-directory: ./Iac/ansible
+
+      - name: Run Ansible Playbook (SSM)
+        run: |
+          cd Iac/ansible
+          chmod +x inventory/dynamic_inventory.py
+          ansible-inventory -i inventory/dynamic_inventory.py --graph
+          ansible-playbook -i inventory/dynamic_inventory.py playbook.yml -vv
+
+      - name: Verify Deployment
+        run: |
+          cd ${{ env.TF_WORKING_DIR }}
+          terraform output

@@ -1,0 +1,188 @@
+name: Deploy Infrastructure
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'Iac/terraform/**'
+      - '.github/workflows/deploy.yml'
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - 'Iac/terraform/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        default: 'dev'
+        type: choice
+        options: [ dev, prod ]
+
+env:
+  TF_VERSION: '1.5.0'
+  TF_WORKING_DIR: './Iac/terraform'
+  AWS_REGION: us-east-1
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  terraform-plan:
+    name: 'Terraform Plan'
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Configure AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_TERRAFORM_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform Init
+        run: terraform init -input=false
+        working-directory: ${{ env.TF_WORKING_DIR }}
+
+      - name: Select/Create Workspace
+        run: |
+          terraform workspace select ${{ github.event.inputs.environment || 'dev' }} \
+            || terraform workspace new ${{ github.event.inputs.environment || 'dev' }}
+        working-directory: ${{ env.TF_WORKING_DIR }}
+
+      - name: Terraform Fmt
+        id: fmt
+        run: terraform fmt -check
+        working-directory: ${{ env.TF_WORKING_DIR }}
+
+      - name: Terraform Validate
+        id: validate
+        run: terraform validate
+        working-directory: ${{ env.TF_WORKING_DIR }}
+
+      - name: Load environment variables
+        run: |
+          if [ -f .env.terraform ]; then
+            cat .env.terraform >> $GITHUB_ENV
+          fi
+        working-directory: ${{ env.TF_WORKING_DIR }}
+
+      - name: Terraform Plan
+        id: plan
+        run: terraform plan -input=false -out=tfplan
+        working-directory: ${{ env.TF_WORKING_DIR }}
+
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ github.event.inputs.environment || 'dev' }}
+          path: ${{ env.TF_WORKING_DIR }}/tfplan
+
+  terraform-apply:
+    name: 'Terraform Apply'
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+    needs: terraform-plan
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Configure AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_TERRAFORM_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform Init
+        run: terraform init -input=false
+        working-directory: ${{ env.TF_WORKING_DIR }}
+
+      - name: Select/Create Workspace
+        run: |
+          terraform workspace select ${{ github.event.inputs.environment || 'dev' }} \
+            || terraform workspace new ${{ github.event.inputs.environment || 'dev' }}
+        working-directory: ${{ env.TF_WORKING_DIR }}
+
+      - name: Download plan artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-${{ github.event.inputs.environment || 'dev' }}
+          path: ${{ env.TF_WORKING_DIR }}
+
+      - name: Load environment variables
+        run: |
+          if [ -f .env.terraform ]; then
+            cat .env.terraform >> $GITHUB_ENV
+          fi
+        working-directory: ${{ env.TF_WORKING_DIR }}
+
+      - name: Terraform Apply
+        run: terraform apply -input=false -auto-approve tfplan
+        working-directory: ${{ env.TF_WORKING_DIR }}
+
+  ansible-configure:
+    name: 'Ansible Configuration'
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+    needs: terraform-apply
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Configure AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_TERRAFORM_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install Ansible + deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install "ansible>=9" boto3 botocore
+          ansible-galaxy collection install amazon.aws community.aws ansible.windows community.windows
+
+      - name: Capture Terraform Outputs (instances.json)
+        run: terraform output -json > ../../ansible/inventory/instances.json
+        working-directory: ${{ env.TF_WORKING_DIR }}
+
+      - name: Load Ansible env (optional user run)
+        run: |
+          if [ -f .env.ansible ]; then
+            cat .env.ansible >> $GITHUB_ENV
+          fi
+        working-directory: ./Iac/ansible
+
+      - name: Run Ansible Playbook (SSM)
+        run: |
+          cd Iac/ansible
+          chmod +x inventory/dynamic_inventory.py
+          ansible-inventory -i inventory/dynamic_inventory.py --graph
+          ansible-playbook -i inventory/dynamic_inventory.py playbook.yml -vv
+
+      - name: Verify Deployment
+        run: |
+          cd ${{ env.TF_WORKING_DIR }}
+          terraform output
