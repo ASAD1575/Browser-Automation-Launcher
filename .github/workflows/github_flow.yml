@@ -13,10 +13,10 @@ on:
       - staging
 
 jobs:
-  deploy-staging:
+  deploy-main:
     if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/staging') ||
-      (github.event_name == 'pull_request' && github.base_ref == 'staging' && github.event.pull_request.merged == true)
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' && github.base_ref == 'main' && github.event.pull_request.merged == true)
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -28,7 +28,7 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v3
         with:
-          role-to-assume: arn:aws:iam::317822790556:role/pipelines-cd-github
+          role-to-assume: arn:aws:iam::375299695019:role/GitHubActionsTerraformRole
           aws-region: us-east-1
 
       - name: Install Terraform
@@ -36,7 +36,7 @@ jobs:
         with:
           terraform_version: 1.9.8
 
-      - name: Deploy to Staging
+      - name: Deploy to main
         # env:
         #     TF_VAR_SECRET_DATA: ${{ secrets.SECRET_DATA_STAGING }}
         run: |
@@ -56,7 +56,7 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v3
         with:
-          role-to-assume: arn:aws:iam::317822790556:role/pipelines-cd-github
+          role-to-assume: arn:aws:iam::375299695019:role/GitHubActionsTerraformRole
           aws-region: us-east-1
 
       - name: Install Terraform
