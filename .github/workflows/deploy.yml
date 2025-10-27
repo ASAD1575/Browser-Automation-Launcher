@@ -44,11 +44,11 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
-    #   - name: Configure AWS (OIDC)
-    #     uses: aws-actions/configure-aws-credentials@v4
-    #     with:
-    #       role-to-assume: ${{ secrets.AWS_TERRAFORM_ROLE_ARN }}
-    #       aws-region: ${{ env.AWS_REGION }}
+      - name: Configure AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_TERRAFORM_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
       
       - name: Terraform migrate state to S3 backend
         run: terraform init -migrate-state -input=false
@@ -63,16 +63,6 @@ jobs:
           terraform workspace select ${{ github.event.inputs.environment || 'dev' }} \
             || terraform workspace new ${{ github.event.inputs.environment || 'dev' }}
         working-directory: ${{ env.TF_WORKING_DIR }}
-
-    #   - name: Terraform Fmt
-    #     id: fmt
-    #     run: terraform fmt -check
-    #     working-directory: ${{ env.TF_WORKING_DIR }}
-
-    #   - name: Terraform Validate
-    #     id: validate
-    #     run: terraform validate
-    #     working-directory: ${{ env.TF_WORKING_DIR }}
 
       - name: Load environment variables
         run: |
