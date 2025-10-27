@@ -5,13 +5,12 @@ terraform {
       version = "~> 6.17.0"
     }
   }
-    backend "s3" {
-    bucket = "tfstate-backend-bucket-1575" # Replace with your S3 bucket name
-    key    = "terraform.tfstate"           # Replace with your desired state file path
-    region = "us-east-1"                   # Replace with your AWS region
-    # dynamodb_table = "windows-server-tfstate-lock-table1575" # Replace with your DynamoDB table name
-    encrypt      = true
-    use_lockfile = true
+  backend "s3" {
+    bucket         = "tfstate-backend-bucket-1575" # Replace with your S3 bucket name
+    key            = "terraform.tfstate"           # Replace with your desired state file path
+    region         = "us-east-1"                   # Replace with your AWS region
+    dynamodb_table = "terraform-state-bucket-1575" # Replace with your DynamoDB table name
+    encrypt        = true
   }
 }
 
@@ -56,34 +55,34 @@ module "cloudwatch" {
         files = {
           collect_list = [
             {
-              file_path          = "C:\\Users\\Administrator\\Documents\\applications\\browser-automation-launcher\\logs\\monitor.log"
-              log_group_name     = "/prod/Browser-Automation-Launcher/app"
-              log_stream_name    = "{instance_id}/monitor.log"
-              timestamp_format   = "%Y-%m-%d %H:%M:%S"
+              file_path        = "C:\\Users\\Administrator\\Documents\\applications\\browser-automation-launcher\\logs\\monitor.log"
+              log_group_name   = "/prod/Browser-Automation-Launcher/app"
+              log_stream_name  = "{instance_id}/monitor.log"
+              timestamp_format = "%Y-%m-%d %H:%M:%S"
             },
             {
-              file_path          = "C:\\Users\\Administrator\\Documents\\applications\\browser-automation-launcher\\logs\\app.log"
-              log_group_name     = "/prod/Browser-Automation-Launcher/app"
-              log_stream_name    = "{instance_id}/app.log"
-              timestamp_format   = "%Y-%m-%d %H:%M:%S"
+              file_path        = "C:\\Users\\Administrator\\Documents\\applications\\browser-automation-launcher\\logs\\app.log"
+              log_group_name   = "/prod/Browser-Automation-Launcher/app"
+              log_stream_name  = "{instance_id}/app.log"
+              timestamp_format = "%Y-%m-%d %H:%M:%S"
             }
           ]
         }
         windows_events = {
           collect_list = [
             {
-              event_levels     = ["ERROR","WARNING"]
-              event_format     = "xml"
-              log_group_name   = "/prod/Browser-Automation-Launcher/app"
-              log_stream_name  = "{instance_id}/EventLog/System"
-              event_name       = "System"
+              event_levels    = ["ERROR", "WARNING"]
+              event_format    = "xml"
+              log_group_name  = "/prod/Browser-Automation-Launcher/app"
+              log_stream_name = "{instance_id}/EventLog/System"
+              event_name      = "System"
             },
             {
-              event_levels     = ["ERROR","WARNING"]
-              event_format     = "xml"
-              log_group_name   = "/prod/Browser-Automation-Launcher/app"
-              log_stream_name  = "{instance_id}/EventLog/Application"
-              event_name       = "Application"
+              event_levels    = ["ERROR", "WARNING"]
+              event_format    = "xml"
+              log_group_name  = "/prod/Browser-Automation-Launcher/app"
+              log_stream_name = "{instance_id}/EventLog/Application"
+              event_name      = "Application"
             }
           ]
         }
