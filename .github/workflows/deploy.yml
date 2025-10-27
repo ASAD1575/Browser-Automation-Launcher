@@ -11,14 +11,14 @@ on:
     paths:
       - 'Iac/terraform/**'
       - '.github/workflows/deploy.yml'
-  workflow_dispatch:
-    inputs:
-      environment:
-        description: 'Environment to deploy'
-        required: true
-        default: 'dev'
-        type: choice
-        options: [ dev, prod ]
+#   workflow_dispatch:
+#     inputs:
+#       environment:
+#         description: 'Environment to deploy'
+#         required: true
+#         default: 'dev'
+#         type: choice
+#         options: [ dev, prod ]
 
 env:
   TF_VERSION: '1.5.0'
@@ -33,7 +33,7 @@ jobs:
   terraform-plan:
     name: 'Terraform Plan'
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment || 'dev' }}
+    # environment: ${{ github.event.inputs.environment || 'dev' }}
 
     steps:
       - name: Checkout
