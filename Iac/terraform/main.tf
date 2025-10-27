@@ -5,6 +5,14 @@ terraform {
       version = "~> 6.17.0"
     }
   }
+    backend "s3" {
+    bucket = "tfstate-backend-bucket-1575" # Replace with your S3 bucket name
+    key    = "terraform.tfstate"           # Replace with your desired state file path
+    region = "us-east-1"                   # Replace with your AWS region
+    # dynamodb_table = "windows-server-tfstate-lock-table1575" # Replace with your DynamoDB table name
+    encrypt      = true
+    use_lockfile = true
+  }
 }
 
 # data "terraform_remote_state" "core" {
