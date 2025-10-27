@@ -41,7 +41,7 @@ jobs:
         #     TF_VAR_SECRET_DATA: ${{ secrets.SECRET_DATA_STAGING }}
         run: |
           chmod +x ./*.sh
-          ENVIRONMENT=main ./deploy.sh
+          ENVIRONMENT=staging ./deploy.sh
 
   deploy-production:
     if: startsWith(github.ref, 'refs/tags/v')
