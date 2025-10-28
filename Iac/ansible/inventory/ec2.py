@@ -62,6 +62,7 @@ def get_instances():
                 # Ensure that the instance has a valid Name and SSM access
                 inventory['_meta']['hostvars'][iid] = {
                     'ansible_host': iid,  # with SSM we use instance ID directly
+                    'ansible_connection': 'aws_ssm',  # Set connection to use AWS SSM plugin
                     'ansible_aws_ssm_region': region,  # Ensure region is correct
                     'instance_name': name_tag
                 }
