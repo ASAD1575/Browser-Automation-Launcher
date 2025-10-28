@@ -12,25 +12,44 @@ import os
 import boto3
 
 def get_instances():
+    # File is now expected to be at the same level as ec2.py's parent directory
     instances_file = os.path.join(os.path.dirname(__file__), 'instances.json')
-
+    
+    # Check for the file (it is now copied by _run_ansible.sh from the artifact)
     if not os.path.exists(instances_file):
-        print(f"Error: {instances_file} not found. Run 'terraform output -json > instances.json' first.", file=sys.stderr)
-        sys.exit(1)
+        # Fallback path to check the expected location of the artifact file
+        parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+        tf_dir = os.path.join(parent_dir, 'terraform')
+        tf_outputs = os.path.join(tf_dir, 'tf_output.json') # The artifact name
+        
+        # If the expected copy doesn't exist, check the artifact location
+        if os.path.exists(tf_outputs):
+             instances_file = tf_outputs
+        else:
+            print(f"Error: Required outputs file not found in expected locations: {instances_file} or {tf_outputs}.", file=sys.stderr)
+            sys.exit(1)
 
     with open(instances_file, 'r') as f:
         outputs = json.load(f)
 
     # Extract instance IDs from Terraform output
+    # Note: Terraform output structures often have a 'value' key if it's not a primitive type.
     instance_ids = outputs.get('cloned_instance_ids', {}).get('value', [])
 
     # Ensure there are instance IDs to process
     if not instance_ids:
-        print("No instance IDs found. Exiting.", file=sys.stderr)
-        sys.exit(1)
+        # This will now return an empty inventory structure, which is acceptable
+        return {
+            '_meta': { 'hostvars': {} },
+            'all': { 'hosts': [] },
+            'windows': { 'hosts': [] }
+        }
 
     # Determine region (default to us-east-1 if not set)
+    # The AWS_REGION/AWS_DEFAULT_REGION is set by the GitHub Actions step
     region = os.environ.get('AWS_REGION', os.environ.get('AWS_DEFAULT_REGION', 'us-east-1'))
+    
+    # Initialize EC2 client
     ec2 = boto3.client('ec2', region_name=region)
 
     # Describe instances to get tags (e.g., Name)
@@ -59,12 +78,15 @@ def get_instances():
                 inventory['all']['hosts'].append(iid)
                 inventory['windows']['hosts'].append(iid)
 
-                # Ensure that the instance has a valid Name and SSM access
+                # Configure hostvars for SSM/Windows connectivity
                 inventory['_meta']['hostvars'][iid] = {
                     'ansible_host': iid,  # with SSM we use instance ID directly
                     'ansible_connection': 'aws_ssm',  # Set connection to use AWS SSM plugin
                     'ansible_aws_ssm_region': region,  # Ensure region is correct
-                    'instance_name': name_tag
+                    'instance_name': name_tag,
+                    # --- CRUCIAL ADDITIONS FOR WINDOWS/SSM ---
+                    'ansible_shell_type': 'powershell',
+                    'ansible_shell_executable': 'powershell.exe'
                 }
 
     return inventory
