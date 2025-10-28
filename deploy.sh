@@ -30,8 +30,8 @@ shift $((OPTIND - 1))
 # Determine Environment
 ####################################################################################################
 # If the provided environment is not one of the allowed values, exit the script
-if [[ "${ENVIRONMENT}" != "staging" && "${ENVIRONMENT}" != "prod" ]]; then
-  echo "Invalid environment: ${ENVIRONMENT}. Allowed values are 'staging', or 'prod'."
+if [[ "${ENVIRONMENT}" != "dev" && "${ENVIRONMENT}" != "staging" && "${ENVIRONMENT}" != "prod" ]]; then
+  echo "Invalid environment: ${ENVIRONMENT}. Allowed values are 'dev', 'staging', or 'prod'."
   exit 1
 fi
 
@@ -45,16 +45,13 @@ echo "FLAG_DESTROY: ${FLAG_DESTROY}"
 # Configure AWS credentials using OIDC (assuming AWS CLI is configured for OIDC)
 # Note: Adjust based on your OIDC setup, e.g., using aws-actions/configure-aws-credentials if in GitHub Actions
 
-source .env.global
-source ".env.${ENVIRONMENT}"
+source Iac/terraform/.env.global.terraform
+source "Iac/terraform/.env.${ENVIRONMENT}.terraform"
 
 export APP_IDENT="${APP_IDENT_WITHOUT_ENV}-${ENVIRONMENT}"
 # Terraform state identifier (must be unique) | allowed characters: a-zA-Z0-9-_
 # NOTE: This can often be the same as the APP_IDENT
 export TERRAFORM_STATE_IDENT=$APP_IDENT
-
-# Source .env.terraform for Terraform variables
-source Iac/terraform/.env.terraform
 
 ####################################################################################################
 # Run Terraform

@@ -383,4 +383,5 @@ Scripts/start_app.ps1
 .terraform/
 .terraform.lock.hcl
 terraform.tfvars
+.env.*.terraform
 TODO.md

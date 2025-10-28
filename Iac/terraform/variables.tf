@@ -52,7 +52,7 @@ variable "existing_iam_role_name" {
   default     = "ec2-browser-role"
 }
 
-# variable "terraform_state_bucket" {
-#   description = "S3 bucket name for Terraform remote state"
-#   type        = string
-# }
+variable "terraform_state_bucket" {
+  description = "S3 bucket name for Terraform remote state"
+  type        = string
+}

@@ -13,10 +13,10 @@ on:
       - staging
 
 jobs:
-  deploy-main:
+  deploy-dev:
     if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'pull_request' && github.base_ref == 'main' && github.event.pull_request.merged == true)
+      (github.event_name == 'push' && github.ref == 'refs/heads/dev') ||
+      (github.event_name == 'pull_request' && github.base_ref == 'dev' && github.event.pull_request.merged == true)
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -36,9 +36,35 @@ jobs:
         with:
           terraform_version: 1.9.8
 
-      - name: Deploy to main
-        # env:
-        #     TF_VAR_SECRET_DATA: ${{ secrets.SECRET_DATA_STAGING }}
+      - name: Deploy to dev
+        run: |
+          chmod +x ./*.sh
+          ENVIRONMENT=dev ./deploy.sh
+
+  deploy-staging:
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/staging') ||
+      (github.event_name == 'pull_request' && github.base_ref == 'staging' && github.event.pull_request.merged == true)
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          role-to-assume: arn:aws:iam::375299695019:role/GitHubActionsTerraformRole
+          aws-region: us-east-1
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.9.8
+
+      - name: Deploy to staging
         run: |
           chmod +x ./*.sh
           ENVIRONMENT=staging ./deploy.sh
@@ -65,8 +91,6 @@ jobs:
           terraform_version: 1.9.8
 
       - name: Deploy to Production
-        # env:
-        #   TF_VAR_SECRET_DATA: ${{ secrets.SECRET_DATA_PROD }}
         run: |
           chmod +x ./*.sh
           ENVIRONMENT=prod ./deploy.sh
