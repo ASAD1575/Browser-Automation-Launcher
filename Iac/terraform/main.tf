@@ -5,13 +5,13 @@ terraform {
       version = "~> 6.17.0"
     }
   }
-  backend "s3" {
-    bucket         = var.terraform_state_bucket     # Replace with your S3 bucket name
-    key            = "terraform-${var.env}.tfstate" # Replace with your desired state file path
-    region         = "us-east-1"                    # Replace with your AWS region
-    dynamodb_table = "terraform-state-lock-table"   # Replace with your DynamoDB table name
-    encrypt        = true
-  }
+  # backend "s3" {
+  #   bucket         = var.terraform_state_bucket     # Replace with your S3 bucket name
+  #   key            = "terraform-${var.env}.tfstate" # Replace with your desired state file path
+  #   region         = "us-east-1"                    # Replace with your AWS region
+  #   dynamodb_table = "terraform-state-lock-table"   # Replace with your DynamoDB table name
+  #   encrypt        = true
+  # }
 }
 
 
