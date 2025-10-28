@@ -3,6 +3,21 @@
 set -e
 
 #########################################################
+# Install Terraform if not installed
+#########################################################
+
+# Check if Terraform is installed
+if ! command -v terraform &> /dev/null
+then
+    echo "Terraform not found, installing..."
+    curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo apt-key add -
+    sudo apt-add-repository "deb https://apt.releases.hashicorp.com $(lsb_release -cs) main"
+    sudo apt-get update && sudo apt-get install terraform
+else
+    echo "Terraform is already installed."
+fi
+
+#########################################################
 # Run Ansible Playbook
 #########################################################
 
@@ -23,8 +38,7 @@ terraform output -json > ../ansible/inventory/instances.json
 # Also save outputs to use for SSM readiness check
 terraform output -json > outputs.json
 
-# Debug: Check the contents of the Terraform outputs
-echo "Terraform Outputs:"
+echo "Terraform outputs:"
 cat outputs.json
 
 cd ../ansible
@@ -43,20 +57,10 @@ echo "Waiting for SSM availability..."
 for i in {1..40}; do
   READY=$(aws ssm describe-instance-information --query 'InstanceInformationList[?PingStatus==`Online`].InstanceId' --output text | wc -w)
   EXPECTED=$(jq '.cloned_instance_ids.value | length' < ../terraform/outputs.json 2>/dev/null || echo 0)
-
-  # Debug: Show the current count of ready and expected instances
-  echo "Attempt $i: $READY/$EXPECTED Online"
-
   if [ "$EXPECTED" -gt 0 ] && [ "$READY" -ge "$EXPECTED" ]; then
     echo "SSM shows $READY/$EXPECTED Online"
     break
   fi
-
-  if [ "$i" -ge 40 ]; then
-    echo "Timed out waiting for SSM to become available. Proceeding anyway."
-    break
-  fi
-
   echo "$READY/$EXPECTED Online — retrying in 15s..."
   sleep 15
 done
@@ -73,8 +77,3 @@ ansible-playbook -i inventory/ec2.py playbook.yml -vv
 echo "Verifying deployment by fetching Terraform outputs..."
 cd ../terraform
 terraform output
-if [ $? -ne 0 ]; then
-    echo "Failed to fetch Terraform outputs."
-    exit 1
-fi
-echo "Ansible playbook completed successfully."
