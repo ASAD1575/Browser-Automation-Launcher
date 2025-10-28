@@ -3,6 +3,21 @@
 set -e
 
 #########################################################
+# Install Terraform if not installed
+#########################################################
+
+# Check if Terraform is installed
+if ! command -v terraform &> /dev/null
+then
+    echo "Terraform not found, installing..."
+    curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo apt-key add -
+    sudo apt-add-repository "deb https://apt.releases.hashicorp.com $(lsb_release -cs) main"
+    sudo apt-get update && sudo apt-get install terraform
+else
+    echo "Terraform is already installed."
+fi
+
+#########################################################
 # Run Ansible Playbook
 #########################################################
 

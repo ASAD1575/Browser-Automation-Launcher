@@ -55,7 +55,7 @@ elif [ "${ENVIRONMENT}" == "staging" ]; then
 else
     echo "Sourcing .env.dev.terraform for development..."
     source .env.dev.terraform
-fi
+fi,
 
 # Export environment variables (if needed)
 export APP_IDENT="${APP_IDENT_WITHOUT_ENV}-${ENVIRONMENT}"
