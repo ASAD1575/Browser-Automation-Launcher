@@ -42,16 +42,17 @@ echo "FLAG_DESTROY: ${FLAG_DESTROY}"
 # Configure Environment
 #########################################################
 
-# Configure AWS credentials using OIDC (assuming AWS CLI is configured for OIDC)
-# Note: Adjust based on your OIDC setup, e.g., using aws-actions/configure-aws-credentials if in GitHub Actions
+echo $BITBUCKET_STEP_OIDC_TOKEN > $(pwd)/web-identity-token
 
-source Iac/terraform/.env.global.terraform
-source "Iac/terraform/.env.${ENVIRONMENT}.terraform"
+source .env.global
+source ".env.${ENVIRONMENT}.terraform"
 
 export APP_IDENT="${APP_IDENT_WITHOUT_ENV}-${ENVIRONMENT}"
 # Terraform state identifier (must be unique) | allowed characters: a-zA-Z0-9-_
 # NOTE: This can often be the same as the APP_IDENT
 export TERRAFORM_STATE_IDENT=$APP_IDENT
+
+source .env.terraform
 
 ####################################################################################################
 # Run Terraform
