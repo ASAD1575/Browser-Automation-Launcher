@@ -29,7 +29,6 @@ shift $((OPTIND - 1))
 ####################################################################################################
 # Determine Environment
 ####################################################################################################
-# If the provided environment is not one of the allowed values, exit the script
 if [[ "${ENVIRONMENT}" != "dev" && "${ENVIRONMENT}" != "staging" && "${ENVIRONMENT}" != "prod" ]]; then
   echo "Invalid environment: ${ENVIRONMENT}. Allowed values are 'dev', 'staging', or 'prod'."
   exit 1
@@ -82,9 +81,11 @@ if [ $? -ne 0 ]; then
 fi
 
 ####################################################################################################
-# Run Ansible
+# Run Ansible (only if resources were successfully created)
 ####################################################################################################
 if [ "$FLAG_DESTROY" = false ] ; then
     echo "Running Ansible playbook..."
     bash ./_run_ansible.sh
+else
+    echo "Skipping Ansible playbook as destroy flag is set."
 fi
