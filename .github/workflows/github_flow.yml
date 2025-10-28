@@ -37,18 +37,18 @@ jobs:
       - name: Deploy to dev
         run: |
           chmod +x ./*.sh
-          # export CLONE_INSTANCE_NAME="${{ vars.CLONE_INSTANCE_NAME }}"
-          # export CLONED_INSTANCE_TYPE="${{ vars.CLONED_INSTANCE_TYPE }}"
-          # export CUSTOM_AMI_ID="${{ vars.CUSTOM_AMI_ID }}"
-          # export CLONED_INSTANCE_COUNT="${{ vars.CLONED_INSTANCE_COUNT }}"
-          # export ENVIRONMENT="${{ vars.ENVIRONMENT }}"
-          # export EC2_KEY_PAIR="${{ vars.EC2_KEY_PAIR }}"
-          # export EC2_SECURITY_GROUP="${{ vars.EC2_SECURITY_GROUP }}"
-          # export EXISTING_IAM_ROLE_NAME="${{ vars.EC2_IAM_ROLE }}"
-          # export CODEARTIFACT_TOKEN="${{ vars.CODEARTIFACT_TOKEN }}"
-          # export TF_STATE_BUCKET="${{ vars.TF_STATE_BUCKET }}"
-          # export AWS_DEFAULT_REGION="${{ vars.AWS_DEFAULT_REGION }}"
-          # export APP_IDENT_WITHOUT_ENV="${{ vars.APP_IDENT_WITHOUT_ENV }}"
+          export CLONE_INSTANCE_NAME="${{ vars.CLONE_INSTANCE_NAME }}"
+          export CLONED_INSTANCE_TYPE="${{ vars.CLONED_INSTANCE_TYPE }}"
+          export CUSTOM_AMI_ID="${{ vars.CUSTOM_AMI_ID }}"
+          export CLONED_INSTANCE_COUNT="${{ vars.CLONED_INSTANCE_COUNT }}"
+          export ENVIRONMENT="${{ vars.ENVIRONMENT }}"
+          export EC2_KEY_PAIR="${{ vars.EC2_KEY_PAIR }}"
+          export EC2_SECURITY_GROUP="${{ vars.EC2_SECURITY_GROUP }}"
+          export EXISTING_IAM_ROLE_NAME="${{ vars.EC2_IAM_ROLE }}"
+          export CODEARTIFACT_TOKEN="${{ vars.CODEARTIFACT_TOKEN }}"
+          export TF_STATE_BUCKET="${{ vars.TF_STATE_BUCKET }}"
+          export AWS_DEFAULT_REGION="${{ vars.AWS_DEFAULT_REGION }}"
+          export APP_IDENT_WITHOUT_ENV="${{ vars.APP_IDENT_WITHOUT_ENV }}"
           ENVIRONMENT=dev ./deploy.sh
 
   deploy-staging:
@@ -77,18 +77,18 @@ jobs:
       - name: Deploy to staging
         run: |
           chmod +x ./*.sh
-          # export CLONE_INSTANCE_NAME="${{ vars.CLONE_INSTANCE_NAME }}"
-          # export CLONED_INSTANCE_TYPE="${{ vars.CLONED_INSTANCE_TYPE }}"
-          # export CUSTOM_AMI_ID="${{ vars.CUSTOM_AMI_ID }}"
-          # export CLONED_INSTANCE_COUNT="${{ vars.CLONED_INSTANCE_COUNT }}"
-          # export ENVIRONMENT="${{ vars.ENVIRONMENT }}"
-          # export EC2_KEY_PAIR="${{ vars.EC2_KEY_PAIR }}"
-          # export EC2_SECURITY_GROUP="${{ vars.EC2_SECURITY_GROUP }}"
-          # export EXISTING_IAM_ROLE_NAME="${{ vars.EC2_IAM_ROLE }}"
-          # export CODEARTIFACT_TOKEN="${{ vars.CODEARTIFACT_TOKEN }}"
-          # export TF_STATE_BUCKET="${{ vars.TF_STATE_BUCKET }}"
-          # export AWS_DEFAULT_REGION="${{ vars.AWS_DEFAULT_REGION }}"
-          # export APP_IDENT_WITHOUT_ENV="${{ vars.APP_IDENT_WITHOUT_ENV }}"
+          export CLONE_INSTANCE_NAME="${{ vars.CLONE_INSTANCE_NAME }}"
+          export CLONED_INSTANCE_TYPE="${{ vars.CLONED_INSTANCE_TYPE }}"
+          export CUSTOM_AMI_ID="${{ vars.CUSTOM_AMI_ID }}"
+          export CLONED_INSTANCE_COUNT="${{ vars.CLONED_INSTANCE_COUNT }}"
+          export ENVIRONMENT="${{ vars.ENVIRONMENT }}"
+          export EC2_KEY_PAIR="${{ vars.EC2_KEY_PAIR }}"
+          export EC2_SECURITY_GROUP="${{ vars.EC2_SECURITY_GROUP }}"
+          export EXISTING_IAM_ROLE_NAME="${{ vars.EC2_IAM_ROLE }}"
+          export CODEARTIFACT_TOKEN="${{ vars.CODEARTIFACT_TOKEN }}"
+          export TF_STATE_BUCKET="${{ vars.TF_STATE_BUCKET }}"
+          export AWS_DEFAULT_REGION="${{ vars.AWS_DEFAULT_REGION }}"
+          export APP_IDENT_WITHOUT_ENV="${{ vars.APP_IDENT_WITHOUT_ENV }}"
           ENVIRONMENT=staging ./deploy.sh
 
   deploy-production:
