@@ -78,7 +78,7 @@ jobs:
           echo "output_file=Iac/terraform/tf_output.json" >> $GITHUB_OUTPUT
         
       - name: Upload Terraform Outputs Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v2
         with:
           name: staging-terraform-outputs
           path: Iac/terraform/tf_output.json
@@ -131,7 +131,7 @@ jobs:
           echo "output_file=Iac/terraform/tf_output.json" >> $GITHUB_OUTPUT
         
       - name: Upload Terraform Outputs Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v2
         with:
           name: staging-terraform-outputs
           path: Iac/terraform/tf_output.json
@@ -182,7 +182,7 @@ jobs:
           echo "output_file=Iac/terraform/tf_output.json" >> $GITHUB_OUTPUT
         
       - name: Upload Terraform Outputs Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v2
         with:
           name: staging-terraform-outputs
           path: Iac/terraform/tf_output.json
