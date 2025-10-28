@@ -14,9 +14,7 @@ on:
 
 jobs:
   deploy-dev:
-    if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/dev') ||
-      (github.event_name == 'pull_request' && github.base_ref == 'dev' && github.event.pull_request.merged == true)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       id-token: write
