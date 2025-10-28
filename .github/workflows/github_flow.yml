@@ -227,8 +227,8 @@ jobs:
         # Set the environment variables from GitHub secrets or variables
       - name: Set Environment Variables
         run: |
-          export TF_VAR_WINDOWS_USERNAME="${{ secrets.WINDOWS_USERNAME }}" >> .env.ansible
-          export TF_VAR_WINDOWS_PASSWORD="${{ secrets.WINDOWS_PASSWORD }}" >> .env.ansible
+          echo "TF_VAR_WINDOWS_USERNAME=${{ secrets.WINDOWS_USERNAME }}" >> .env.ansible
+          echo "TF_VAR_WINDOWS_PASSWORD=${{ secrets.WINDOWS_PASSWORD }}" >> .env.ansible
 
       - name: Run Ansible Configuration
         run: |
