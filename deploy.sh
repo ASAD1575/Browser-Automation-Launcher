@@ -75,6 +75,12 @@ else
     bash ./_run_terraform_create.sh
 fi
 
+# Ensure the `terraform apply` has completed successfully
+if [ $? -ne 0 ]; then
+    echo "Terraform apply failed, skipping Ansible."
+    exit 1
+fi
+
 ####################################################################################################
 # Run Ansible
 ####################################################################################################

@@ -9,12 +9,15 @@ set -e
 cd Iac/ansible
 
 # Install Ansible + deps
+echo "Installing Ansible and dependencies..."
 python -m pip install --upgrade pip
 pip install "ansible>=9" boto3 botocore
 ansible-galaxy collection install amazon.aws community.aws ansible.windows community.windows
 
 # Capture Terraform Outputs (instances.json)
 cd ../terraform
+
+echo "Capturing Terraform outputs for Ansible inventory..."
 terraform output -json > ../ansible/inventory/instances.json
 # Also save outputs to use for SSM readiness check
 terraform output -json > outputs.json
@@ -46,9 +49,11 @@ done
 # Run Ansible Playbook (SSM)
 #########################################################
 chmod +x inventory/ec2.py
+echo "Running Ansible playbook..."
 ansible-inventory -i inventory/ec2.py --graph
 ansible-playbook -i inventory/ec2.py playbook.yml -vv
 
 # Verify Deployment
+echo "Verifying deployment by fetching Terraform outputs..."
 cd ../terraform
 terraform output
