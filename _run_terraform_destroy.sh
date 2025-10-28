@@ -7,6 +7,7 @@
 cd Iac/terraform/
 rm -fR .terraform
 rm -fR .terraform.lock.hcl
+echo "Generating backend.tf for Terraform destroy..."
 cat > backend.tf << EOF
 terraform {
   backend "s3" {
@@ -22,7 +23,14 @@ EOF
 #########################################################
 
 # Initialize terraform
+echo "Initializing Terraform..."
 terraform init
 
+# Destroy terraform-managed infrastructure
 echo "Destroying resources..."
 terraform destroy -auto-approve
+if [ $? -ne 0 ]; then
+    echo "Terraform destroy failed."
+    exit 1
+fi
+echo "Terraform destroy completed successfully."
