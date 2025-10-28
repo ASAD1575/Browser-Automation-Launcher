@@ -52,16 +52,7 @@ export APP_IDENT="${APP_IDENT_WITHOUT_ENV}-${ENVIRONMENT}"
 # NOTE: This can often be the same as the APP_IDENT
 export TERRAFORM_STATE_IDENT=$APP_IDENT
 
-# Set Terraform variables from environment
-export TF_VAR_aws_region=${AWS_DEFAULT_REGION}
-export TF_VAR_key_pair_name=${key_pair_name}
-export TF_VAR_terraform_state_bucket=${TERRAFORM_STATE_BUCKET}
-export TF_VAR_clone_instance_name=${clone_instance_name}
-export TF_VAR_cloned_instance_type=${cloned_instance_type}
-export TF_VAR_cloned_instance_count=${cloned_instance_count}
-export TF_VAR_env=${env}
-export TF_VAR_existing_security_group_name=${existing_security_group_name}
-export TF_VAR_existing_iam_role_name=${existing_iam_role_name}
+source .env.terraform
 
 ####################################################################################################
 # Run Terraform
