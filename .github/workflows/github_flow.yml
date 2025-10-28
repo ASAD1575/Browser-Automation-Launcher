@@ -23,6 +23,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Set Terraform environment variables
+        run: |
+          source Iac/terraform/.env.global.terraform
+          source Iac/terraform/.env.dev.terraform
+          echo "TF_VAR_aws_region=$AWS_DEFAULT_REGION" >> $GITHUB_ENV
+          echo "TF_VAR_key_pair_name=$key_pair_name" >> $GITHUB_ENV
+          echo "TF_VAR_terraform_state_bucket=$TERRAFORM_STATE_BUCKET" >> $GITHUB_ENV
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v3
         with:
@@ -51,6 +59,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Set Terraform environment variables
+        run: |
+          source Iac/terraform/.env.global.terraform
+          source Iac/terraform/.env.staging.terraform
+          echo "TF_VAR_aws_region=$AWS_DEFAULT_REGION" >> $GITHUB_ENV
+          echo "TF_VAR_key_pair_name=$key_pair_name" >> $GITHUB_ENV
+          echo "TF_VAR_terraform_state_bucket=$TERRAFORM_STATE_BUCKET" >> $GITHUB_ENV
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v3
         with:
@@ -76,6 +92,14 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+
+      - name: Set Terraform environment variables
+        run: |
+          source Iac/terraform/.env.global.terraform
+          source Iac/terraform/.env.prod.terraform
+          echo "TF_VAR_aws_region=$AWS_DEFAULT_REGION" >> $GITHUB_ENV
+          echo "TF_VAR_key_pair_name=$key_pair_name" >> $GITHUB_ENV
+          echo "TF_VAR_terraform_state_bucket=$TERRAFORM_STATE_BUCKET" >> $GITHUB_ENV
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v3
