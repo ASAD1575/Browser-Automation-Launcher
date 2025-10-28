@@ -29,6 +29,7 @@ shift $((OPTIND - 1))
 ####################################################################################################
 # Determine Environment
 ####################################################################################################
+# If the provided environment is not one of the allowed values, exit the script
 if [[ "${ENVIRONMENT}" != "dev" && "${ENVIRONMENT}" != "staging" && "${ENVIRONMENT}" != "prod" ]]; then
   echo "Invalid environment: ${ENVIRONMENT}. Allowed values are 'dev', 'staging', or 'prod'."
   exit 1
@@ -40,6 +41,10 @@ echo "FLAG_DESTROY: ${FLAG_DESTROY}"
 #########################################################
 # Configure Environment
 #########################################################
+
+# Source the global variables first
+echo "Sourcing .env.global for global variables..."
+source .env.global
 
 # Dynamically source the environment-specific `.env` file
 if [ "${ENVIRONMENT}" == "prod" ]; then
