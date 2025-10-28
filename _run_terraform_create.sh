@@ -35,7 +35,7 @@ terraform show -json tfplan > tfplan.json
 
 # Apply terraform changes
 echo "Getting plan from tfplan..."
-terraform apply -input=false tfplan -auto-approve
+terraform apply -auto-approve tfplan
 if [ $? -ne 0 ]; then
     echo "Terraform apply failed."
     exit 1
