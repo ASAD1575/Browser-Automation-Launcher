@@ -41,6 +41,12 @@ terraform output -json > outputs.json
 echo "Terraform outputs:"
 cat outputs.json
 
+# Check if outputs are empty
+if [ "$(cat outputs.json)" = "{}" ]; then
+  echo "No Terraform outputs found. Skipping Ansible configuration as no instances were deployed."
+  exit 0
+fi
+
 cd ../ansible
 
 # Load Ansible env (optional user run)
