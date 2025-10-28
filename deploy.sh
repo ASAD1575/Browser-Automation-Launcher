@@ -52,8 +52,6 @@ export APP_IDENT="${APP_IDENT_WITHOUT_ENV}-${ENVIRONMENT}"
 # NOTE: This can often be the same as the APP_IDENT
 export TERRAFORM_STATE_IDENT=$APP_IDENT
 
-source .env.terraform
-
 ####################################################################################################
 # Run Terraform
 ####################################################################################################
