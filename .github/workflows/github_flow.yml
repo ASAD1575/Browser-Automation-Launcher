@@ -224,6 +224,12 @@ jobs:
           role-to-assume: arn:aws:iam::375299695019:role/GitHubActionsTerraformRole
           aws-region: us-east-1
 
+        # Set the environment variables from GitHub secrets or variables
+      - name: Set Environment Variables
+        run: |
+          echo "TF_VAR_WINDOWS_USERNAME=${{ secrets.WINDOWS_USERNAME }}" >> .env.ansible
+          echo "TF_VAR_WINDOWS_PASSWORD=${{ secrets.WINDOWS_PASSWORD }}" >> .env.ansible
+
       - name: Run Ansible Configuration
         run: |
           chmod +x ./_run_ansible.sh
