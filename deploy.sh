@@ -29,7 +29,6 @@ shift $((OPTIND - 1))
 ####################################################################################################
 # Determine Environment
 ####################################################################################################
-# If the provided environment is not one of the allowed values, exit the script
 if [[ "${ENVIRONMENT}" != "dev" && "${ENVIRONMENT}" != "staging" && "${ENVIRONMENT}" != "prod" ]]; then
   echo "Invalid environment: ${ENVIRONMENT}. Allowed values are 'dev', 'staging', or 'prod'."
   exit 1
@@ -42,24 +41,32 @@ echo "FLAG_DESTROY: ${FLAG_DESTROY}"
 # Configure Environment
 #########################################################
 
-echo $BITBUCKET_STEP_OIDC_TOKEN > $(pwd)/web-identity-token
+# Dynamically source the environment-specific `.env` file
+if [ "${ENVIRONMENT}" == "prod" ]; then
+    echo "Sourcing .env.prod.terraform for production..."
+    source .env.prod.terraform
+elif [ "${ENVIRONMENT}" == "staging" ]; then
+    echo "Sourcing .env.staging.terraform for staging..."
+    source .env.staging.terraform
+else
+    echo "Sourcing .env.dev.terraform for development..."
+    source .env.dev.terraform
+fi
 
-source .env.global
-source ".env.${ENVIRONMENT}.terraform"
-
+# Export environment variables (if needed)
 export APP_IDENT="${APP_IDENT_WITHOUT_ENV}-${ENVIRONMENT}"
-# Terraform state identifier (must be unique) | allowed characters: a-zA-Z0-9-_
-# NOTE: This can often be the same as the APP_IDENT
 export TERRAFORM_STATE_IDENT=$APP_IDENT
 
-source .env.terraform
+echo "Terraform state identifier: ${TERRAFORM_STATE_IDENT}"
 
 ####################################################################################################
 # Run Terraform
 ####################################################################################################
 if [ "$FLAG_DESTROY" = true ] ; then
+    echo "Destroying resources..."
     bash ./_run_terraform_destroy.sh
 else
+    echo "Creating resources..."
     bash ./_run_terraform_create.sh
 fi
 
@@ -67,5 +74,6 @@ fi
 # Run Ansible
 ####################################################################################################
 if [ "$FLAG_DESTROY" = false ] ; then
+    echo "Running Ansible playbook..."
     bash ./_run_ansible.sh
 fi
