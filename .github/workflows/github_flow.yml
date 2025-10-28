@@ -37,6 +37,18 @@ jobs:
       - name: Deploy to dev
         run: |
           chmod +x ./*.sh
+          export CLONE_INSTANCE_NAME="${{ vars.CLONE_INSTANCE_NAME }}"
+          export CLONED_INSTANCE_TYPE="${{ vars.CLONED_INSTANCE_TYPE }}"
+          export CUSTOM_AMI_ID="${{ vars.CUSTOM_AMI_ID }}"
+          export CLONED_INSTANCE_COUNT="${{ vars.CLONED_INSTANCE_COUNT }}"
+          export ENVIRONMENT="${{ vars.ENVIRONMENT }}"
+          export EC2_KEY_PAIR="${{ vars.EC2_KEY_PAIR }}"
+          export EC2_SECURITY_GROUP="${{ vars.EC2_SECURITY_GROUP }}"
+          export EXISTING_IAM_ROLE_NAME="${{ vars.EC2_IAM_ROLE }}"
+          export CODEARTIFACT_TOKEN="${{ vars.CODEARTIFACT_TOKEN }}"
+          export TF_STATE_BUCKET="${{ vars.TF_STATE_BUCKET }}"
+          export AWS_DEFAULT_REGION="${{ vars.AWS_DEFAULT_REGION }}"
+          export APP_IDENT_WITHOUT_ENV="${{ vars.APP_IDENT_WITHOUT_ENV }}"
           ENVIRONMENT=dev ./deploy.sh
 
   deploy-staging:
@@ -50,12 +62,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-
-      - name: Set Terraform environment variables
-        run: |
-          echo "TF_VAR_aws_region=${{ secrets.AWS_REGION }}" >> $GITHUB_ENV
-          echo "TF_VAR_key_pair_name=${{ secrets.KEY_PAIR_NAME }}" >> $GITHUB_ENV
-          echo "TF_VAR_terraform_state_bucket=${{ secrets.TERRAFORM_STATE_BUCKET }}" >> $GITHUB_ENV
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v3
@@ -71,6 +77,18 @@ jobs:
       - name: Deploy to staging
         run: |
           chmod +x ./*.sh
+          export CLONE_INSTANCE_NAME="${{ vars.CLONE_INSTANCE_NAME }}"
+          export CLONED_INSTANCE_TYPE="${{ vars.CLONED_INSTANCE_TYPE }}"
+          export CUSTOM_AMI_ID="${{ vars.CUSTOM_AMI_ID }}"
+          export CLONED_INSTANCE_COUNT="${{ vars.CLONED_INSTANCE_COUNT }}"
+          export ENVIRONMENT="${{ vars.ENVIRONMENT }}"
+          export EC2_KEY_PAIR="${{ vars.EC2_KEY_PAIR }}"
+          export EC2_SECURITY_GROUP="${{ vars.EC2_SECURITY_GROUP }}"
+          export EXISTING_IAM_ROLE_NAME="${{ vars.EC2_IAM_ROLE }}"
+          export CODEARTIFACT_TOKEN="${{ vars.CODEARTIFACT_TOKEN }}"
+          export TF_STATE_BUCKET="${{ vars.TF_STATE_BUCKET }}"
+          export AWS_DEFAULT_REGION="${{ vars.AWS_DEFAULT_REGION }}"
+          export APP_IDENT_WITHOUT_ENV="${{ vars.APP_IDENT_WITHOUT_ENV }}"
           ENVIRONMENT=staging ./deploy.sh
 
   deploy-production:
@@ -82,12 +100,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-
-      - name: Set Terraform environment variables
-        run: |
-          echo "TF_VAR_aws_region=${{ secrets.AWS_REGION }}" >> $GITHUB_ENV
-          echo "TF_VAR_key_pair_name=${{ secrets.KEY_PAIR_NAME }}" >> $GITHUB_ENV
-          echo "TF_VAR_terraform_state_bucket=${{ secrets.TERRAFORM_STATE_BUCKET }}" >> $GITHUB_ENV
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v3
@@ -103,4 +115,16 @@ jobs:
       - name: Deploy to Production
         run: |
           chmod +x ./*.sh
+          export CLONE_INSTANCE_NAME="${{ vars.CLONE_INSTANCE_NAME }}"
+          export CLONED_INSTANCE_TYPE="${{ vars.CLONED_INSTANCE_TYPE }}"
+          export CUSTOM_AMI_ID="${{ vars.CUSTOM_AMI_ID }}"
+          export CLONED_INSTANCE_COUNT="${{ vars.CLONED_INSTANCE_COUNT }}"
+          export ENVIRONMENT="${{ vars.ENVIRONMENT }}"
+          export EC2_KEY_PAIR="${{ vars.EC2_KEY_PAIR }}"
+          export EC2_SECURITY_GROUP="${{ vars.EC2_SECURITY_GROUP }}"
+          export EXISTING_IAM_ROLE_NAME="${{ vars.EC2_IAM_ROLE }}"
+          export CODEARTIFACT_TOKEN="${{ vars.CODEARTIFACT_TOKEN }}"
+          export TF_STATE_BUCKET="${{ vars.TF_STATE_BUCKET }}"
+          export AWS_DEFAULT_REGION="${{ vars.AWS_DEFAULT_REGION }}"
+          export APP_IDENT_WITHOUT_ENV="${{ vars.APP_IDENT_WITHOUT_ENV }}"
           ENVIRONMENT=prod ./deploy.sh
