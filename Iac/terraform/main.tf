@@ -5,25 +5,24 @@ terraform {
       version = "~> 6.17.0"
     }
   }
-  # backend "s3" {
-  #   bucket = "terraform-state-bucket-1575" # Replace with your S3 bucket name
-  #   key    = "terraform.tfstate"           # Replace with your desired state file path
-  #   region = "us-east-1"                   # Replace with your AWS region
-  #   # dynamodb_table = "terraform-state-bucket-1575" # Replace with your DynamoDB table name
-  #   encrypt      = true
-  #   use_lockfile = true
-  # }
-}
-
-
-data "terraform_remote_state" "core" {
-  backend = "s3"
-  config = {
-    bucket = var.terraform_state_bucket
-    key    = "terraform-core-aws-infrastructure-${var.env}.tfstate"
-    region = var.aws_region
+  backend "s3" {
+    bucket         = var.terraform_state_bucket     # Replace with your S3 bucket name
+    key            = "terraform-${var.env}.tfstate" # Replace with your desired state file path
+    region         = "us-east-1"                    # Replace with your AWS region
+    dynamodb_table = "terraform-state-lock-table"   # Replace with your DynamoDB table name
+    encrypt        = true
   }
 }
+
+
+# data "terraform_remote_state" "core" {
+#   backend = "s3"
+#   config = {
+#     bucket = var.terraform_state_bucket
+#     key    = "terraform-core-aws-infrastructure-${var.env}.tfstate"
+#     region = var.aws_region
+#   }
+# }
 
 # VPC Module
 module "vpc" {
