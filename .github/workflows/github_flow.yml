@@ -147,3 +147,31 @@ jobs:
           export AWS_DEFAULT_REGION="${{ vars.AWS_DEFAULT_REGION }}"
           export APP_IDENT_WITHOUT_ENV="${{ vars.APP_IDENT_WITHOUT_ENV }}"
           ENVIRONMENT=prod ./deploy.sh
+
+  ansible-configuration:
+    runs-on: ubuntu-latest
+    needs: [deploy-dev, deploy-staging, deploy-production]
+    if: |
+      github.event_name == 'push' &&
+      (
+        (github.ref == 'refs/heads/main' && github.event.inputs.action == 'apply') ||
+        (github.ref == 'refs/heads/staging' && github.event.inputs.action == 'apply') ||
+        (startsWith(github.ref, 'refs/tags/v') && github.event.inputs.action == 'apply')
+      )
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          role-to-assume: arn:aws:iam::375299695019:role/GitHubActionsTerraformRole
+          aws-region: us-east-1
+
+      - name: Run Ansible Configuration
+        run: |
+          chmod +x ./_run_ansible.sh
+          ./_run_ansible.sh

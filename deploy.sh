@@ -76,16 +76,6 @@ fi
 
 # Ensure the `terraform apply` has completed successfully
 if [ $? -ne 0 ]; then
-    echo "Terraform apply failed, skipping Ansible."
+    echo "Terraform apply failed"
     exit 1
-fi
-
-####################################################################################################
-# Run Ansible (only if resources were successfully created)
-####################################################################################################
-if [ "$FLAG_DESTROY" = false ] ; then
-    echo "Running Ansible playbook..."
-    bash ./_run_ansible.sh
-else
-    echo "Skipping Ansible playbook as destroy flag is set."
 fi
