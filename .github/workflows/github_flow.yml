@@ -30,6 +30,12 @@ jobs:
           echo "TF_VAR_aws_region=$AWS_DEFAULT_REGION" >> $GITHUB_ENV
           echo "TF_VAR_key_pair_name=$key_pair_name" >> $GITHUB_ENV
           echo "TF_VAR_terraform_state_bucket=$TERRAFORM_STATE_BUCKET" >> $GITHUB_ENV
+          echo "TF_VAR_clone_instance_name=$clone_instance_name" >> $GITHUB_ENV
+          echo "TF_VAR_cloned_instance_type=$cloned_instance_type" >> $GITHUB_ENV
+          echo "TF_VAR_cloned_instance_count=$cloned_instance_count" >> $GITHUB_ENV
+          echo "TF_VAR_env=$env" >> $GITHUB_ENV
+          echo "TF_VAR_existing_security_group_name=$existing_security_group_name" >> $GITHUB_ENV
+          echo "TF_VAR_existing_iam_role_name=$existing_iam_role_name" >> $GITHUB_ENV
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v3
@@ -38,7 +44,7 @@ jobs:
           aws-region: us-east-1
 
       - name: Install Terraform
-        uses: hashicorp/setup-terraform@v2
+        uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.8
 
@@ -74,7 +80,7 @@ jobs:
           aws-region: us-east-1
 
       - name: Install Terraform
-        uses: hashicorp/setup-terraform@v2
+        uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.8
 
@@ -108,7 +114,7 @@ jobs:
           aws-region: us-east-1
 
       - name: Install Terraform
-        uses: hashicorp/setup-terraform@v2
+        uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.8
 

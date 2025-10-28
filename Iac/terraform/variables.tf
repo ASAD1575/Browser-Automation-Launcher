@@ -18,7 +18,7 @@ variable "cloned_instance_count" {
 variable "cloned_instance_type" {
   description = "Instance type for the cloned instances"
   type        = string
-  default     = "t2.micro"
+  default     = "t3.micro"
 }
 
 variable "clone_instance_name" {
