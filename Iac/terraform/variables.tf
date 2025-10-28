@@ -11,8 +11,8 @@ variable "windows_server_2022_ami_id" {
 
 variable "cloned_instance_count" {
   description = "Number of cloned instances to create"
-  type        = number
-  default     = 1
+  type        = string
+  default     = "1"
 }
 
 variable "cloned_instance_type" {
