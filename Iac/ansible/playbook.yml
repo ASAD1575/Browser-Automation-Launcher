@@ -9,8 +9,8 @@
 
     # --- Optional: run a command as a specific user (from env) ---
     run_user_actions: true
-    become_username: "{{ lookup('env', 'WINDOWS_USERNAME') | default('', true) }}"
-    become_password: "{{ lookup('env', 'WINDOWS_PASSWORD') | default('', true) }}"
+    become_username: "{{ lookup('env', 'TF_VAR_WINDOWS_USERNAME') | default('', true) }}"
+    become_password: "{{ lookup('env', 'TF_VAR_WINDOWS_PASSWORD') | default('', true) }}"
 
   # SSM connection (Windows)
   vars_files: []

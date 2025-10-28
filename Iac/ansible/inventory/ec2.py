@@ -24,11 +24,16 @@ def get_instances():
     # Extract instance IDs from Terraform output
     instance_ids = outputs.get('cloned_instance_ids', {}).get('value', [])
 
+    # Ensure there are instance IDs to process
+    if not instance_ids:
+        print("No instance IDs found. Exiting.", file=sys.stderr)
+        sys.exit(1)
+
     # Determine region (default to us-east-1 if not set)
     region = os.environ.get('AWS_REGION', os.environ.get('AWS_DEFAULT_REGION', 'us-east-1'))
     ec2 = boto3.client('ec2', region_name=region)
 
-    # Describe instances to get tags (e.g. Name)
+    # Describe instances to get tags (e.g., Name)
     response = ec2.describe_instances(InstanceIds=instance_ids)
     reservations = response.get('Reservations', [])
 
@@ -54,9 +59,10 @@ def get_instances():
                 inventory['all']['hosts'].append(iid)
                 inventory['windows']['hosts'].append(iid)
 
+                # Ensure that the instance has a valid Name and SSM access
                 inventory['_meta']['hostvars'][iid] = {
                     'ansible_host': iid,  # with SSM we use instance ID directly
-                    'ansible_aws_ssm_region': region,
+                    'ansible_aws_ssm_region': region,  # Ensure region is correct
                     'instance_name': name_tag
                 }
 
