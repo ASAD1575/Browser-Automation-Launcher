@@ -55,6 +55,7 @@ jobs:
       - name: Deploy to dev
         run: |
           chmod +x ./*.sh
+          # Export GitHub repository variables
           export CLONE_INSTANCE_NAME="${{ vars.CLONE_INSTANCE_NAME }}"
           export CLONED_INSTANCE_TYPE="${{ vars.CLONED_INSTANCE_TYPE }}"
           export CUSTOM_AMI_ID="${{ vars.CUSTOM_AMI_ID }}"
