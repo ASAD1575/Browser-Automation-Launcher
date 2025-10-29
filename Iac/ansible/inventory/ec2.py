@@ -83,7 +83,9 @@ def get_instances():
                     'ansible_host': instance['PublicIpAddress'],  # Use public IP for WinRM
                     'ansible_connection': 'winrm',  # Set connection to use WinRM
                     'ansible_winrm_transport': 'basic',  # Use basic auth
+                    'ansible_winrm_scheme': 'http',  # Use HTTP instead of HTTPS
                     'ansible_winrm_server_cert_validation': 'ignore',  # Ignore SSL cert validation
+                    'ansible_winrm_port': 5985,  # HTTP port for WinRM
                     'ansible_user': 'Administrator',  # Windows admin user
                     'ansible_password': os.environ.get('TF_VAR_WINDOWS_PASSWORD', ''),  # Password from env
                     'instance_name': name_tag,

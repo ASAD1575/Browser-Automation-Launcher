@@ -66,11 +66,15 @@ Set-Service WinRM -StartupType Automatic
 # Start WinRM service
 Start-Service WinRM
 
-# Configure firewall to allow WinRM
+# Configure firewall to allow WinRM HTTP
 netsh advfirewall firewall add rule name="WinRM-HTTP" dir=in localport=5985 protocol=TCP action=allow
 
 # Allow WinRM through Windows Firewall
 Set-NetFirewallRule -Name "WINRM-HTTP-In-TCP" -Enabled True
+
+# Also ensure WinRM listener is configured for HTTP
+winrm set winrm/config/service '@{AllowUnencrypted="true"}'
+winrm set winrm/config/service/auth '@{Basic="true"}'
 
 # Test WinRM connectivity
 try {
