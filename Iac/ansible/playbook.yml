@@ -13,11 +13,15 @@
     become_password: "{{ lookup('env', 'TF_VAR_WINDOWS_PASSWORD') | default('', true) }}"
 
   tasks:
+    - name: Wait for WinRM port to be available
+      wait_for:
+        host: "{{ inventory_hostname }}"
+        port: 5985
+        timeout: 300
+        state: started
+
     - name: Verify WinRM connectivity
       ansible.windows.win_ping:
-      retries: 5
-      delay: 10
-      until: result is succeeded
 
     # ----------------------------
     # Ensure user is logged in (Check if Task is running or start Task)
