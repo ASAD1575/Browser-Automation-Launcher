@@ -71,9 +71,12 @@ for i in {1..40}; do
   sleep 15
 done
 
+
 # Check if we broke out of the loop due to timeout
 if [ "$READY" -lt "$EXPECTED" ]; then
-    echo "Timeout: Not all instances came online in SSM after 10 minutes. Proceeding with available instances."
+    echo "Timeout: Not any instance came online in SSM after 10 minutes."
+    echo "Error: Unable to detect any instance online in SSM."
+    exit 1
 fi
 
 #########################################################

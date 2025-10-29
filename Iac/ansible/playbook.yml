@@ -4,7 +4,7 @@
   gather_facts: no
   vars:
     # --- Your service + logs ---
-    app_service_name: "BrowserAutomationLogs"
+    app_service_name: "BrowserAutomationLauncher"
     cw_log_group_name: "/prod/Browser-Automation-Launcher/app"
 
     # --- Optional: run a command as a specific user (from env) ---
@@ -20,53 +20,6 @@
   tasks:
     - name: Verify SSM connectivity
       ansible.windows.win_ping:
-
-    # ----------------------------
-    # 1) Ensure SSM Agent installed (idempotent)
-    # ----------------------------
-    - name: Check if SSM service exists
-      ansible.windows.win_shell: |
-        $svc = Get-Service -Name AmazonSSMAgent -ErrorAction SilentlyContinue
-        if ($null -eq $svc) { exit 1 } else { exit 0 }
-      register: ssm_present
-      changed_when: false
-      failed_when: false
-
-    - name: Install SSM Agent if missing (region-aware)
-      when: ssm_present.rc != 0
-      block:
-        - name: Get region from IMDSv2
-          ansible.windows.win_uri:
-            url: http://169.254.169.254/latest/api/token
-            method: PUT
-            headers:
-              X-aws-ec2-metadata-token-ttl-seconds: "21600"
-          register: imds_token
-          failed_when: false
-
-        - name: Read placement/region
-          ansible.windows.win_uri:
-            url: http://169.254.169.254/latest/meta-data/placement/region
-            headers: "{{ {'X-aws-ec2-metadata-token': imds_token.content} if imds_token.status_code == 200 else {} }}"
-          register: imds_region
-          failed_when: false
-
-        - name: Download SSM agent installer
-          ansible.windows.win_get_url:
-            url: "https://s3.amazonaws.com/amazon-ssm-{{ (imds_region.content | default('us-east-1')) | trim }}/latest/windows_amd64/AmazonSSMAgentSetup.exe"
-            dest: "C:\\Windows\\Temp\\AmazonSSMAgentSetup.exe"
-
-        - name: Install SSM agent
-          ansible.windows.win_package:
-            path: "C:\\Windows\\Temp\\AmazonSSMAgentSetup.exe"
-            arguments: "/S"
-            state: present
-
-    - name: Ensure SSM service running
-      ansible.windows.win_service:
-        name: AmazonSSMAgent
-        start_mode: auto
-        state: started
 
     # ----------------------------
     # 2) Install CloudWatch Agent (MSI with retry)
