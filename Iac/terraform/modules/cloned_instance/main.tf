@@ -18,36 +18,7 @@ resource "aws_instance" "cloned_instance" {
   user_data = <<-EOF
 <powershell>
 # ----------------------------
-# 1) Ensure SSM Agent is Installed & Running
-# ----------------------------
-if (-not (Get-Service AmazonSSMAgent -ErrorAction SilentlyContinue)) {
-  Write-Host "Installing SSM Agent..."
-  
-  # Get region from IMDSv2
-  $token = Invoke-RestMethod -Uri "http://169.254.169.254/latest/api/token" -Method PUT -Headers @{"X-aws-ec2-metadata-token-ttl-seconds"="21600"} -TimeoutSec 5
-  $region = Invoke-RestMethod -Uri "http://169.254.169.254/latest/meta-data/placement/region" -Headers @{ "X-aws-ec2-metadata-token" = $token } -TimeoutSec 5
-  
-  # If no region is fetched from IMDS, fallback to a Terraform variable or default region
-  if (-not $region) { $region = "us-east-1" } # Replace with your fallback region if needed
-
-  # Download and install SSM agent
-  $ssmUrl = "https://s3.amazonaws.com/amazon-ssm-$region/latest/windows_amd64/AmazonSSMAgentSetup.exe"
-  $ssmExe = "C:\\Windows\\Temp\\AmazonSSMAgentSetup.exe"
-  Invoke-WebRequest -Uri $ssmUrl -OutFile $ssmExe -UseBasicParsing
-  Start-Process -FilePath $ssmExe -ArgumentList "/S" -Wait
-}
-
-# Start the AmazonSSMAgent service and ensure it starts automatically on boot
-try {
-  Start-Service AmazonSSMAgent
-  Set-Service -Name AmazonSSMAgent -StartupType Automatic
-  Write-Host "SSM Agent is installed and running."
-} catch {
-  Write-Host "Failed to start SSM Agent: $_"
-}
-
-# ----------------------------
-# 2) Enable WinRM for Ansible connectivity
+# 1) Enable WinRM for Ansible connectivity
 # ----------------------------
 Write-Host "Enabling WinRM for remote management..."
 
@@ -86,12 +57,40 @@ winrm quickconfig -transport:http -force
 try {
   $winrmStatus = Get-Service WinRM
   if ($winrmStatus.Status -eq "Running") {
-    Write-Host "WinRM is enabled and running."
+    Write-Host "WinRM service is running."
   } else {
-    Write-Host "WinRM service is not running."
+    Write-Host "WinRM service is not running. Starting it..."
+    Start-Service WinRM
   }
 } catch {
-  Write-Host "Failed to check WinRM status: $_"
+  Write-Host "Failed to check/start WinRM service: $_"
+}
+
+# Verify WinRM listeners
+try {
+  $listeners = winrm enumerate winrm/config/listener
+  Write-Host "WinRM listeners: $listeners"
+} catch {
+  Write-Host "Failed to enumerate WinRM listeners: $_"
+}
+
+# Test local WinRM connectivity
+try {
+  Test-WSMan -ComputerName localhost
+  Write-Host "Local WinRM test passed."
+} catch {
+  Write-Host "Local WinRM test failed: $_"
+}
+
+# Ensure network connectivity for WinRM
+try {
+  $firewallRules = Get-NetFirewallRule | Where-Object { $_.DisplayName -like "*WinRM*" }
+  Write-Host "WinRM firewall rules: $($firewallRules.Count) rules found"
+  foreach ($rule in $firewallRules) {
+    Write-Host "  - $($rule.DisplayName): $($rule.Enabled)"
+  }
+} catch {
+  Write-Host "Failed to check firewall rules: $_"
 }
 
 </powershell>
