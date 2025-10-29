@@ -82,12 +82,13 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
     break
   fi
 
-  # If health check is not "ok", show the status and retry
-  if [[ "$HEALTH_CHECKS" != "ok" && "$HEALTH_CHECKS" != "initializing" ]]; then
-    echo "Health check not 'ok' — retrying in $WAIT_TIME seconds..."
+  # If health check is still "initializing", continue retrying
+  if [[ "$HEALTH_CHECKS" == "initializing" ]]; then
+    echo "Health check is 'initializing' — retrying in $WAIT_TIME seconds..."
+  else
+    echo "SSM: $READY/$EXPECTED Online, EC2 Status: $INSTANCE_STATUS, Health Checks: $HEALTH_CHECKS — retrying in $WAIT_TIME seconds..."
   fi
 
-  echo "SSM: $READY/$EXPECTED Online, EC2 Status: $INSTANCE_STATUS, Health Checks: $HEALTH_CHECKS — retrying in $WAIT_TIME seconds..."
   sleep $WAIT_TIME
   ((RETRY_COUNT++))
 done
