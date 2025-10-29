@@ -20,6 +20,17 @@
       until: result is succeeded
 
     # ----------------------------
+    # Ensure user is logged in (Check if Task is running or start Task)
+    # ----------------------------
+    - name: Ensure user is logged in for scheduled task to run
+      ansible.windows.win_command: |
+        $user = "{{ become_username }}"
+        $password = "{{ become_password }}"
+        $command = "schtasks /run /tn 'YourTaskName'" # Replace 'YourTaskName' with the actual Task Scheduler task name.
+        Start-Process -FilePath "cmd.exe" -ArgumentList "/c $command" -Credential (New-Object System.Management.Automation.PSCredential($user, (ConvertTo-SecureString $password -AsPlainText -Force)))
+      when: run_user_actions | bool and become_username | length > 0 and become_password | length > 0
+
+    # ----------------------------
     # 2) Install CloudWatch Agent (MSI with retry)
     # ----------------------------
     - name: Download CW agent MSI
