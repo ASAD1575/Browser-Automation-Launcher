@@ -46,38 +46,56 @@ pip install "ansible>=9" boto3 botocore pywinrm requests-ntlm
 # Install AWS CLI
 pip install awscli --upgrade
 
-# AWS Session Manager Plugin download URL (direct link)
-echo "Downloading AWS Session Manager plugin..."
+# --- START: NON-SUDO AWS SESSION MANAGER PLUGIN INSTALLATION ---
+INSTALL_DIR="$HOME/.local/bin"
+PLUGIN_NAME="session-manager-plugin"
+TEMP_DIR="/tmp/smm_install_temp_$$" # Unique temp directory
 
-curl -o session-manager-plugin-linux-x64.tar.gz https://d1vvhvl2y92vvt.cloudfront.net/aws-session-manager-plugin/1.2.10/session-manager-plugin-linux-x64.tar.gz
+echo "Starting non-sudo installation of AWS Session Manager Plugin..."
+mkdir -p "$TEMP_DIR"
+mkdir -p "$INSTALL_DIR"
 
-# Verify the download
-if [ ! -f session-manager-plugin-linux-x64.tar.gz ]; then
-  echo "Error: Failed to download the AWS Session Manager plugin"
-  exit 1
+# Download the latest Linux 64-bit ZIP file
+DOWNLOAD_URL="https://s3.amazonaws.com/session-manager-downloads/plugin/latest/linux_64bit/session-manager-plugin.zip"
+
+echo "Downloading plugin from AWS S3..."
+if ! curl -s -o "$TEMP_DIR/$PLUGIN_NAME.zip" "$DOWNLOAD_URL"; then
+    echo "Error: Failed to download plugin. Check network connectivity."
+    rm -rf "$TEMP_DIR"
+    exit 1
 fi
 
-# Extract the tarball
-echo "Extracting AWS Session Manager plugin..."
-tar -xvzf session-manager-plugin-linux-x64.tar.gz
+# Unzip the executable
+echo "Extracting executable..."
+if ! unzip -q "$TEMP_DIR/$PLUGIN_NAME.zip" -d "$TEMP_DIR"; then
+    echo "Error: Failed to unzip plugin file."
+    rm -rf "$TEMP_DIR"
+    exit 1
+fi
 
-# Create directory for installation (no sudo required)
-mkdir -p $HOME/session-manager-plugin
+# Move the executable to the local bin directory
+echo "Moving $PLUGIN_NAME to $INSTALL_DIR..."
+mv "$TEMP_DIR/$PLUGIN_NAME" "$INSTALL_DIR/"
 
-# Move the extracted files to the user directory
-mv session-manager-plugin $HOME/session-manager-plugin/
+# Make sure it's executable
+chmod +x "$INSTALL_DIR/$PLUGIN_NAME"
 
-# Add the installation directory to the PATH
-echo "export PATH=\$PATH:$HOME/session-manager-plugin" >> $HOME/.bashrc
-source $HOME/.bashrc
+# Clean up temporary files
+rm -rf "$TEMP_DIR"
+
+# Add the installation directory to the PATH for the current shell session
+# This ensures the command is available immediately after installation
+export PATH="$INSTALL_DIR:$PATH"
+echo "NOTICE: Added $INSTALL_DIR to PATH for this script's session."
 
 # Verify if the session-manager plugin is available
-if ! command -v session-manager-plugin &> /dev/null; then
+if ! command -v $PLUGIN_NAME &> /dev/null; then
   echo "Error: AWS Session Manager plugin installation failed"
   exit 1
 fi
 
 echo "AWS Session Manager plugin installed successfully"
+# --- END: NON-SUDO AWS SESSION MANAGER PLUGIN INSTALLATION ---
 
 ansible-galaxy collection install amazon.aws community.aws ansible.windows community.windows
 
