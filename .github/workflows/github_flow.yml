@@ -232,8 +232,6 @@ jobs:
       
       - name: Install AWS Session Manager Plugin
         uses: ankurk91/install-session-manager-plugin-action@v1
-        with:
-          install_path: $HOME/session-manager-plugin
 
       - name: Run Ansible Configuration
         run: |
