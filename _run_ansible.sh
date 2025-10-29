@@ -46,32 +46,32 @@ pip install "ansible>=9" boto3 botocore pywinrm requests-ntlm
 # Install AWS CLI
 pip install awscli --upgrade
 
-# Install the AWS Session Manager plugin without sudo
-echo "Installing AWS Session Manager plugin..."
+# AWS Session Manager Plugin download URL (direct link)
+echo "Downloading AWS Session Manager plugin..."
 
-# Download the AWS Session Manager Plugin for Linux (adjust the link for other OS)
 curl -o session-manager-plugin-linux-x64.tar.gz https://d1vvhvl2y92vvt.cloudfront.net/aws-session-manager-plugin/1.2.10/session-manager-plugin-linux-x64.tar.gz
 
-# Verify download
+# Verify the download
 if [ ! -f session-manager-plugin-linux-x64.tar.gz ]; then
   echo "Error: Failed to download the AWS Session Manager plugin"
   exit 1
 fi
 
 # Extract the tarball
+echo "Extracting AWS Session Manager plugin..."
 tar -xvzf session-manager-plugin-linux-x64.tar.gz
 
-# Create a directory for installation (user directory, without sudo)
+# Create directory for installation (no sudo required)
 mkdir -p $HOME/session-manager-plugin
 
-# Move the extracted files to the home directory
+# Move the extracted files to the user directory
 mv session-manager-plugin $HOME/session-manager-plugin/
 
-# Add the installation directory to PATH (so the plugin can be used)
+# Add the installation directory to the PATH
 echo "export PATH=\$PATH:$HOME/session-manager-plugin" >> $HOME/.bashrc
 source $HOME/.bashrc
 
-# Check if the session-manager plugin was installed successfully
+# Verify if the session-manager plugin is available
 if ! command -v session-manager-plugin &> /dev/null; then
   echo "Error: AWS Session Manager plugin installation failed"
   exit 1
