@@ -46,6 +46,30 @@ try {
   Write-Host "Failed to start SSM Agent: $_"
 }
 
+# ----------------------------
+# 2) Wait for SSM Agent to be fully ready
+# ----------------------------
+Write-Host "Waiting for SSM Agent to be ready..."
+$maxRetries = 20
+$retryCount = 0
+while ($retryCount -lt $maxRetries) {
+  try {
+    $ssmStatus = Get-Service AmazonSSMAgent
+    if ($ssmStatus.Status -eq "Running") {
+      Write-Host "SSM Agent is running and ready."
+      break
+    }
+  } catch {
+    Write-Host "SSM Agent not ready yet, retrying..."
+  }
+  Start-Sleep -Seconds 10
+  $retryCount++
+}
+
+if ($retryCount -eq $maxRetries) {
+  Write-Host "SSM Agent failed to become ready after 5 minutes."
+}
+
 </powershell>
 EOF
 

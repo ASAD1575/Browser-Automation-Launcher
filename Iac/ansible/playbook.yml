@@ -20,6 +20,9 @@
   tasks:
     - name: Verify SSM connectivity
       ansible.windows.win_ping:
+      retries: 5
+      delay: 10
+      until: result is succeeded
 
     # ----------------------------
     # 2) Install CloudWatch Agent (MSI with retry)
