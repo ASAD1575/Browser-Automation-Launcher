@@ -12,11 +12,6 @@
     become_username: "{{ lookup('env', 'TF_VAR_WINDOWS_USERNAME') | default('', true) }}"
     become_password: "{{ lookup('env', 'TF_VAR_WINDOWS_PASSWORD') | default('', true) }}"
 
-  # SSM connection (Windows)
-  vars_files: []
-  vars_prompt: []
-  any_errors_fatal: true
-
   tasks:
     - name: Verify WinRM connectivity
       ansible.windows.win_ping:
