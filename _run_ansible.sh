@@ -55,35 +55,43 @@ if [ -f .env.ansible ]; then
 fi
 
 #########################################################
-# Wait for all new instances to be Online in SSM (up to ~10 min)
+# Wait for all new instances to be Online in SSM and EC2 Health status to be ready
 #########################################################
-echo "Waiting for SSM availability..."
-for i in {1..40}; do
+echo "Waiting for SSM availability and EC2 instance health..."
+
+# Set max retries and timeout (in seconds)
+MAX_RETRIES=40
+WAIT_TIME=30
+RETRY_COUNT=0
+
+while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+  # Check SSM availability
   READY=$(aws ssm describe-instance-information --query 'InstanceInformationList[?PingStatus==`Online`].InstanceId' --output text | wc -w)
+  
+  # Check EC2 health status
+  INSTANCE_IDS=$(jq -r '.cloned_instance_ids.value | join(" ")' < ../terraform/outputs.json)
+  INSTANCE_STATUS=$(aws ec2 describe-instance-status --instance-ids $INSTANCE_IDS --query 'InstanceStatuses[*].InstanceState.Name' --output text)
+  HEALTH_CHECKS=$(aws ec2 describe-instance-status --instance-ids $INSTANCE_IDS --query 'InstanceStatuses[*].SystemStatus.Status' --output text)
+
   # Read expected count from the copied outputs file
   EXPECTED=$(jq -r '.cloned_instance_ids.value | length' < ../terraform/outputs.json 2>/dev/null || echo 0)
-  
-  if [ "$EXPECTED" -gt 0 ] && [ "$READY" -ge "$EXPECTED" ]; then
-    echo "SSM shows $READY/$EXPECTED Online"
+
+  if [ "$EXPECTED" -gt 0 ] && [ "$READY" -ge "$EXPECTED" ] && [ "$INSTANCE_STATUS" == "running" ] && [ "$HEALTH_CHECKS" == "ok" ]; then
+    echo "SSM shows $READY/$EXPECTED Online, EC2 instances are running, and health checks passed."
     break
   fi
-  echo "$READY/$EXPECTED Online — retrying in 15s..."
-  sleep 15
+
+  echo "SSM: $READY/$EXPECTED Online, EC2 Status: $INSTANCE_STATUS, Health Checks: $HEALTH_CHECKS — retrying in $WAIT_TIME seconds..."
+  sleep $WAIT_TIME
+  ((RETRY_COUNT++))
 done
 
-
 # Check if we broke out of the loop due to timeout
-if [ "$READY" -lt "$EXPECTED" ]; then
-    echo "Timeout: Not any instance came online in SSM after 10 minutes."
-    echo "Error: Unable to detect any instance online in SSM."
+if [ "$READY" -lt "$EXPECTED" ] || [ "$INSTANCE_STATUS" != "running" ] || [ "$HEALTH_CHECKS" != "ok" ]; then
+    echo "Timeout: Not all instances are online or healthy after $((MAX_RETRIES * WAIT_TIME)) seconds."
+    echo "Error: Unable to detect all instances online or healthy."
     exit 1
 fi
-
-#########################################################
-# Wait 5 minutes before running the Ansible Playbook
-#########################################################
-echo "Waiting for 5 minutes before running the Ansible playbook..."
-sleep 300
 
 #########################################################
 # Run Ansible Playbook (SSM)
