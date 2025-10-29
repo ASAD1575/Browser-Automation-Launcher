@@ -18,79 +18,32 @@ resource "aws_instance" "cloned_instance" {
   user_data = <<-EOF
 <powershell>
 # ----------------------------
-# 1) Enable WinRM for Ansible connectivity
+# 1) Ensure SSM Agent is Installed & Running
 # ----------------------------
-Write-Host "Enabling WinRM for remote management..."
+if (-not (Get-Service AmazonSSMAgent -ErrorAction SilentlyContinue)) {
+  Write-Host "Installing SSM Agent..."
 
-# Enable PowerShell remoting
-Enable-PSRemoting -Force
+  # Get region from IMDSv2
+  $token = Invoke-RestMethod -Uri "http://169.254.169.254/latest/api/token" -Method PUT -Headers @{"X-aws-ec2-metadata-token-ttl-seconds"="21600"} -TimeoutSec 5
+  $region = Invoke-RestMethod -Uri "http://169.254.169.254/latest/meta-data/placement/region" -Headers @{ "X-aws-ec2-metadata-token" = $token } -TimeoutSec 5
 
-# Configure WinRM to allow unencrypted traffic (for basic auth)
-Set-Item WSMan:\localhost\Service\AllowUnencrypted -Value $true
+  # If no region is fetched from IMDS, fallback to a Terraform variable or default region
+  if (-not $region) { $region = "us-east-1" } # Replace with your fallback region if needed
 
-# Configure WinRM to allow basic authentication
-Set-Item WSMan:\localhost\Service\Auth\Basic -Value $true
-
-# Set WinRM service to start automatically
-Set-Service WinRM -StartupType Automatic
-
-# Start WinRM service
-Start-Service WinRM
-
-# Configure firewall to allow WinRM HTTP
-netsh advfirewall firewall add rule name="WinRM-HTTP" dir=in localport=5985 protocol=TCP action=allow
-
-# Allow WinRM through Windows Firewall
-Set-NetFirewallRule -Name "WINRM-HTTP-In-TCP" -Enabled True
-
-# Also ensure WinRM listener is configured for HTTP
-winrm set winrm/config/service '@{AllowUnencrypted="true"}'
-winrm set winrm/config/service/auth '@{Basic="true"}'
-
-# Create WinRM listener for HTTP on port 5985
-winrm create winrm/config/Listener?Address=*+Transport=HTTP
-
-# Quick create HTTP listener (alternative method)
-winrm quickconfig -transport:http -force
-
-# Test WinRM connectivity
-try {
-  $winrmStatus = Get-Service WinRM
-  if ($winrmStatus.Status -eq "Running") {
-    Write-Host "WinRM service is running."
-  } else {
-    Write-Host "WinRM service is not running. Starting it..."
-    Start-Service WinRM
-  }
-} catch {
-  Write-Host "Failed to check/start WinRM service: $_"
+  # Download and install SSM agent
+  $ssmUrl = "https://s3.amazonaws.com/amazon-ssm-$region/latest/windows_amd64/AmazonSSMAgentSetup.exe"
+  $ssmExe = "C:\\Windows\\Temp\\AmazonSSMAgentSetup.exe"
+  Invoke-WebRequest -Uri $ssmUrl -OutFile $ssmExe -UseBasicParsing
+  Start-Process -FilePath $ssmExe -ArgumentList "/S" -Wait
 }
 
-# Verify WinRM listeners
+# Start the AmazonSSMAgent service and ensure it starts automatically on boot
 try {
-  $listeners = winrm enumerate winrm/config/listener
-  Write-Host "WinRM listeners: $listeners"
+  Start-Service AmazonSSMAgent
+  Set-Service -Name AmazonSSMAgent -StartupType Automatic
+  Write-Host "SSM Agent is installed and running."
 } catch {
-  Write-Host "Failed to enumerate WinRM listeners: $_"
-}
-
-# Test local WinRM connectivity
-try {
-  Test-WSMan -ComputerName localhost
-  Write-Host "Local WinRM test passed."
-} catch {
-  Write-Host "Local WinRM test failed: $_"
-}
-
-# Ensure network connectivity for WinRM
-try {
-  $firewallRules = Get-NetFirewallRule | Where-Object { $_.DisplayName -like "*WinRM*" }
-  Write-Host "WinRM firewall rules: $($firewallRules.Count) rules found"
-  foreach ($rule in $firewallRules) {
-    Write-Host "  - $($rule.DisplayName): $($rule.Enabled)"
-  }
-} catch {
-  Write-Host "Failed to check firewall rules: $_"
+  Write-Host "Failed to start SSM Agent: $_"
 }
 
 </powershell>

@@ -13,14 +13,7 @@
     become_password: "{{ lookup('env', 'TF_VAR_WINDOWS_PASSWORD') | default('', true) }}"
 
   tasks:
-    - name: Wait for WinRM port to be available
-      wait_for:
-        host: "{{ inventory_hostname }}"
-        port: 5985
-        timeout: 300
-        state: started
-
-    - name: Verify WinRM connectivity
+    - name: Verify SSM connectivity
       ansible.windows.win_ping:
 
     # ----------------------------
@@ -30,7 +23,7 @@
       ansible.windows.win_command: |
         $user = "{{ become_username }}"
         $password = "{{ become_password }}"
-        $command = "schtasks /run /tn 'YourTaskName'" # Replace 'YourTaskName' with the actual Task Scheduler task name.
+        $command = "schtasks /run /tn 'AutoUserLogin'" # Replace 'YourTaskName' with the actual Task Scheduler task name.
         Start-Process -FilePath "cmd.exe" -ArgumentList "/c $command" -Credential (New-Object System.Management.Automation.PSCredential($user, (ConvertTo-SecureString $password -AsPlainText -Force)))
       when: run_user_actions | bool and become_username | length > 0 and become_password | length > 0
 

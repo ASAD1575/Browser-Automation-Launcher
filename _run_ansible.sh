@@ -1,8 +1,4 @@
 #!/bin/bash
-
-# Removed set -e to allow retry logic to work properly
-# Errors will be handled explicitly in the retry loop
-
 # --- Configuration for Artifact Locations ---
 # The tf_output.json file is downloaded into Iac/terraform/ 
 # from the previous job's artifact upload.
@@ -106,13 +102,13 @@ if [ "$RETRY_COUNT" -eq "$MAX_RETRIES" ]; then
 fi
 
 #########################################################
-# Additional wait for user_data completion (WinRM setup)
+# Additional wait for instance setup
 #########################################################
-echo "Waiting additional 2 minutes for user_data (WinRM setup) to complete..."
+echo "Waiting additional 2 minutes for instance setup to complete..."
 sleep 120  # 2 minutes additional wait
 
 #########################################################
-# Run Ansible Playbook (WinRM)
+# Run Ansible Playbook (SSM)
 #########################################################
 chmod +x inventory/ec2.py
 echo "Running Ansible playbook..."
