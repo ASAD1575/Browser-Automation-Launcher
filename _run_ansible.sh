@@ -46,29 +46,37 @@ pip install "ansible>=9" boto3 botocore pywinrm requests-ntlm
 # Install AWS CLI
 pip install awscli --upgrade
 
-# --- START: NON-SUDO AWS SESSION MANAGER PLUGIN INSTALLATION ---
+# --- START: ROBUST NON-SUDO AWS SESSION MANAGER PLUGIN INSTALLATION ---
 INSTALL_DIR="$HOME/.local/bin"
 PLUGIN_NAME="session-manager-plugin"
 TEMP_DIR="/tmp/smm_install_temp_$$" # Unique temp directory
+DOWNLOAD_URL="https://s3.amazonaws.com/session-manager-downloads/plugin/latest/linux_64bit/session-manager-plugin.zip"
 
-echo "Starting non-sudo installation of AWS Session Manager Plugin..."
+echo "Starting robust non-sudo installation of AWS Session Manager Plugin..."
 mkdir -p "$TEMP_DIR"
 mkdir -p "$INSTALL_DIR"
 
 # Download the latest Linux 64-bit ZIP file
-DOWNLOAD_URL="https://s3.amazonaws.com/session-manager-downloads/plugin/latest/linux_64bit/session-manager-plugin.zip"
+# Use -L to follow redirects and -f to fail on server errors
+echo "Downloading plugin from AWS S3 using curl -L..."
+if ! curl -L -f -s -o "$TEMP_DIR/$PLUGIN_NAME.zip" "$DOWNLOAD_URL"; then
+    echo "Error: Failed to download plugin. Check URL, network connectivity, and AWS service status."
+    rm -rf "$TEMP_DIR"
+    exit 1
+fi
 
-echo "Downloading plugin from AWS S3..."
-if ! curl -s -o "$TEMP_DIR/$PLUGIN_NAME.zip" "$DOWNLOAD_URL"; then
-    echo "Error: Failed to download plugin. Check network connectivity."
+# Check if the downloaded file is empty (another sign of a failed download)
+if [ ! -s "$TEMP_DIR/$PLUGIN_NAME.zip" ]; then
+    echo "Error: Downloaded file is empty or missing. Aborting unzip."
     rm -rf "$TEMP_DIR"
     exit 1
 fi
 
 # Unzip the executable
 echo "Extracting executable..."
+# The -q (quiet) flag is important here.
 if ! unzip -q "$TEMP_DIR/$PLUGIN_NAME.zip" -d "$TEMP_DIR"; then
-    echo "Error: Failed to unzip plugin file."
+    echo "Error: Failed to unzip plugin file. The downloaded file may be corrupted."
     rm -rf "$TEMP_DIR"
     exit 1
 fi
@@ -90,12 +98,12 @@ echo "NOTICE: Added $INSTALL_DIR to PATH for this script's session."
 
 # Verify if the session-manager plugin is available
 if ! command -v $PLUGIN_NAME &> /dev/null; then
-  echo "Error: AWS Session Manager plugin installation failed"
+  echo "Error: AWS Session Manager plugin installation failed after PATH update."
   exit 1
 fi
 
 echo "AWS Session Manager plugin installed successfully"
-# --- END: NON-SUDO AWS SESSION MANAGER PLUGIN INSTALLATION ---
+# --- END: ROBUST NON-SUDO AWS SESSION MANAGER PLUGIN INSTALLATION ---
 
 ansible-galaxy collection install amazon.aws community.aws ansible.windows community.windows
 
