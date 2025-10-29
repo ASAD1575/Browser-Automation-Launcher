@@ -76,6 +76,12 @@ Set-NetFirewallRule -Name "WINRM-HTTP-In-TCP" -Enabled True
 winrm set winrm/config/service '@{AllowUnencrypted="true"}'
 winrm set winrm/config/service/auth '@{Basic="true"}'
 
+# Create WinRM listener for HTTP on port 5985
+winrm create winrm/config/Listener?Address=*+Transport=HTTP
+
+# Quick create HTTP listener (alternative method)
+winrm quickconfig -transport:http -force
+
 # Test WinRM connectivity
 try {
   $winrmStatus = Get-Service WinRM

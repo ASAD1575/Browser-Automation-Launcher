@@ -93,7 +93,7 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
     break
   fi
 
-  echo "Waiting: $INSTANCE_STATUS_COUNT/$EXPECTED running, $PUBLIC_IP_COUNT/$EXPECTED have public IPs, $SYSTEM_STATUS_COUNT/$EXPECTED system status ok/initializing — retrying in $WAIT_TIME seconds..."
+  echo "Waiting: $INSTANCE_STATUS_COUNT/$EXPECTED running, $PUBLIC_IP_COUNT/$EXPECTED have public IPs, $SYSTEM_STATUS_COUNT/$EXPECTED system status initializing — retrying in $WAIT_TIME seconds..."
   sleep $WAIT_TIME
   ((RETRY_COUNT++))
 done
@@ -108,7 +108,7 @@ fi
 #########################################################
 # Additional wait for user_data completion (WinRM setup)
 #########################################################
-echo "Waiting additional time for user_data (WinRM setup) to complete..."
+echo "Waiting additional 2 minutes for user_data (WinRM setup) to complete..."
 sleep 120  # 2 minutes additional wait
 
 #########################################################
@@ -119,4 +119,12 @@ echo "Running Ansible playbook..."
 ansible-inventory -i inventory/ec2.py --graph
 ansible-playbook -i inventory/ec2.py playbook.yml -vv
 
-echo "Ansible playbook execution completed."
+# Capture the exit code of ansible-playbook
+ANSIBLE_EXIT_CODE=$?
+
+if [ $ANSIBLE_EXIT_CODE -ne 0 ]; then
+    echo "Ansible playbook failed with exit code $ANSIBLE_EXIT_CODE"
+    exit $ANSIBLE_EXIT_CODE
+fi
+
+echo "Ansible playbook execution completed successfully."
