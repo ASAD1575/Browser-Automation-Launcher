@@ -1,6 +1,7 @@
 #!/bin/bash
 
-set -e
+# Removed set -e to allow retry logic to work properly
+# Errors will be handled explicitly in the retry loop
 
 # --- Configuration for Artifact Locations ---
 # The tf_output.json file is downloaded into Iac/terraform/ 
