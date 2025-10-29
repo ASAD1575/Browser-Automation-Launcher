@@ -81,7 +81,8 @@ def get_instances():
                 # Configure hostvars for SSM/Windows connectivity
                 inventory['_meta']['hostvars'][iid] = {
                     'ansible_host': iid,  # with SSM we use instance ID directly
-                    'ansible_connection': 'amazon.aws.aws_ssm',  # Set connection to use AWS SSM plugin
+                    # *** CORRECT FQCN FOR THE AMAZON COLLECTION PLUGIN ***
+                    'ansible_connection': 'amazon.aws.aws_ssm',  
                     'ansible_aws_ssm_region': region,  # Ensure region is correct
                     'instance_name': name_tag,
                     # --- CRUCIAL ADDITIONS FOR WINDOWS/SSM ---
