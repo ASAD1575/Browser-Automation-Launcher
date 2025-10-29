@@ -42,6 +42,16 @@ cd Iac/ansible
 echo "Installing Ansible and dependencies..."
 python -m pip install --upgrade pip
 pip install "ansible>=9" boto3 botocore pywinrm requests-ntlm
+
+# Install AWS CLI
+pip install awscli --upgrade
+
+# Install the AWS Session Manager plugin
+echo "Installing AWS Session Manager plugin..."
+curl "https://d1vvhvl2y92vvt.cloudfront.net/aws-session-manager-plugin/1.2.10/session-manager-plugin-linux-x64.tar.gz" -o "session-manager-plugin-linux-x64.tar.gz"
+tar -xvzf session-manager-plugin-linux-x64.tar.gz
+sudo ./session-manager-plugin/install
+
 ansible-galaxy collection install amazon.aws community.aws ansible.windows community.windows
 
 # Load Ansible env (optional user run)
@@ -52,9 +62,9 @@ if [ -f .env.ansible ]; then
 fi
 
 #########################################################
-# Wait for all new instances to be fully initialized and ready for WinRM
+# Wait for all new instances to be fully initialized and ready for SSM
 #########################################################
-echo "Waiting for EC2 instances to be fully initialized and ready for WinRM..."
+echo "Waiting for EC2 instances to be fully initialized and ready for SSM..."
 
 # Set max retries and timeout (in seconds)
 MAX_RETRIES=60
