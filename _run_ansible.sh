@@ -77,6 +77,12 @@ if [ "$READY" -lt "$EXPECTED" ]; then
 fi
 
 #########################################################
+# Wait 5 minutes before running the Ansible Playbook
+#########################################################
+echo "Waiting for 5 minutes before running the Ansible playbook..."
+sleep 300
+
+#########################################################
 # Run Ansible Playbook (SSM)
 #########################################################
 chmod +x inventory/ec2.py
@@ -84,5 +90,4 @@ echo "Running Ansible playbook..."
 ansible-inventory -i inventory/ec2.py --graph
 ansible-playbook -i inventory/ec2.py playbook.yml -vv
 
-# No need to run terraform output at the end of this script, as it's not the deployment job
-# Removing the "Verify Deployment" section.
+echo "Ansible playbook execution completed."
