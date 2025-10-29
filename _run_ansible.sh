@@ -44,7 +44,7 @@ cd Iac/ansible
 # Install Ansible + deps
 echo "Installing Ansible and dependencies..."
 python -m pip install --upgrade pip
-pip install "ansible>=9" boto3 botocore
+pip install "ansible>=9" boto3 botocore pywinrm requests-ntlm
 ansible-galaxy collection install amazon.aws community.aws ansible.windows community.windows
 
 # Load Ansible env (optional user run)
