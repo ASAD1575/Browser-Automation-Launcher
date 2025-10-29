@@ -229,6 +229,11 @@ jobs:
         run: |
           echo "TF_VAR_WINDOWS_USERNAME=${{ secrets.WINDOWS_USERNAME }}" >> .env.ansible
           echo "TF_VAR_WINDOWS_PASSWORD=${{ secrets.WINDOWS_PASSWORD }}" >> .env.ansible
+      
+      - name: Install AWS Session Manager Plugin
+        uses: ankurk91/install-session-manager-plugin-action@v1
+        with:
+          install_path: $HOME/session-manager-plugin
 
       - name: Run Ansible Configuration
         run: |

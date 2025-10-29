@@ -42,53 +42,6 @@ cd Iac/ansible
 echo "Installing Ansible and dependencies..."
 python -m pip install --upgrade pip
 pip install "ansible>=9" boto3 botocore pywinrm requests-ntlm
-
-# Install AWS CLI
-pip install awscli --upgrade
-
-# --- START: OFFICIAL AWS SESSION MANAGER PLUGIN INSTALLATION VIA SHELL SCRIPT ---
-INSTALL_DIR="$HOME/.local/bin"
-PLUGIN_NAME="session-manager-plugin"
-INSTALL_SCRIPT_URL="https://s3.amazonaws.com/session-manager-downloads/plugin/latest/linux/install-ssm-plugin"
-
-echo "Starting official non-sudo installation of AWS Session Manager Plugin..."
-mkdir -p "$INSTALL_DIR"
-
-# 1. Download the official installer script
-echo "Downloading official installation script..."
-if ! curl -L -f -s -o /tmp/install-ssm-plugin "$INSTALL_SCRIPT_URL"; then
-    echo "Error: Failed to download the official installer script. Check network connectivity."
-    exit 1
-fi
-
-# 2. Make the script executable
-chmod +x /tmp/install-ssm-plugin
-
-# 3. Run the installer script, pointing it to our user-local bin directory
-# The official script handles platform detection and permissions
-echo "Running installer script to place plugin in $INSTALL_DIR..."
-if ! /tmp/install-ssm-plugin -i "$INSTALL_DIR" -y; then
-    echo "Error: The AWS SSM installer script failed to execute successfully."
-    rm -f /tmp/install-ssm-plugin
-    exit 1
-fi
-
-# 4. Clean up the installer script
-rm -f /tmp/install-ssm-plugin
-
-# 5. Add the installation directory to the PATH for the current shell session
-export PATH="$INSTALL_DIR:$PATH"
-echo "NOTICE: Added $INSTALL_DIR to PATH for this script's session."
-
-# 6. Verify if the session-manager plugin is available
-if ! command -v $PLUGIN_NAME &> /dev/null; then
-  echo "Error: AWS Session Manager plugin installation failed after PATH update."
-  exit 1
-fi
-
-echo "AWS Session Manager plugin installed successfully"
-# --- END: OFFICIAL AWS SESSION MANAGER PLUGIN INSTALLATION VIA SHELL SCRIPT ---
-
 ansible-galaxy collection install amazon.aws community.aws ansible.windows community.windows
 
 # Load Ansible env (optional user run)
