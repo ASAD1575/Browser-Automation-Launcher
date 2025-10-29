@@ -78,13 +78,16 @@ def get_instances():
                 inventory['all']['hosts'].append(iid)
                 inventory['windows']['hosts'].append(iid)
 
-                # Configure hostvars for SSM/Windows connectivity
+                # Configure hostvars for WinRM/Windows connectivity
                 inventory['_meta']['hostvars'][iid] = {
-                    'ansible_host': iid,  # with SSM we use instance ID directly
-                    'ansible_connection': 'aws_ssm',  # Set connection to use AWS SSM plugin
-                    'ansible_aws_ssm_region': region,  # Ensure region is correct
+                    'ansible_host': instance['PublicIpAddress'],  # Use public IP for WinRM
+                    'ansible_connection': 'winrm',  # Set connection to use WinRM
+                    'ansible_winrm_transport': 'basic',  # Use basic auth
+                    'ansible_winrm_server_cert_validation': 'ignore',  # Ignore SSL cert validation
+                    'ansible_user': 'Administrator',  # Windows admin user
+                    'ansible_password': os.environ.get('TF_VAR_WINDOWS_PASSWORD', ''),  # Password from env
                     'instance_name': name_tag,
-                    # --- CRUCIAL ADDITIONS FOR WINDOWS/SSM ---
+                    # --- CRUCIAL ADDITIONS FOR WINDOWS/WINRM ---
                     'ansible_shell_type': 'powershell',
                     'ansible_shell_executable': 'powershell.exe'
                 }

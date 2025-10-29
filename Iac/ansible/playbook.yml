@@ -18,7 +18,7 @@
   any_errors_fatal: true
 
   tasks:
-    - name: Verify SSM connectivity
+    - name: Verify WinRM connectivity
       ansible.windows.win_ping:
       retries: 5
       delay: 10
@@ -141,9 +141,9 @@
     # ----------------------------
     # 6) (Optional) run a simple command as the specified user (become: runas)
     # ----------------------------
-    - name: Verify user login via SSM become (optional)
+    - name: Verify user login via WinRM become (optional)
       when: run_user_actions | bool and (become_username | length > 0) and (become_password | length > 0)
-      ansible.windows.win_command: echo "Successfully logged in to {{ inventory_hostname }} as {{ become_username }} via SSM"
+      ansible.windows.win_command: echo "Successfully logged in to {{ inventory_hostname }} as {{ become_username }} via WinRM"
       become: yes
       vars:
         ansible_become_method: runas

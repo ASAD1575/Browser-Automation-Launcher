@@ -47,27 +47,41 @@ try {
 }
 
 # ----------------------------
-# 2) Wait for SSM Agent to be fully ready
+# 2) Enable WinRM for Ansible connectivity
 # ----------------------------
-Write-Host "Waiting for SSM Agent to be ready..."
-$maxRetries = 20
-$retryCount = 0
-while ($retryCount -lt $maxRetries) {
-  try {
-    $ssmStatus = Get-Service AmazonSSMAgent
-    if ($ssmStatus.Status -eq "Running") {
-      Write-Host "SSM Agent is running and ready."
-      break
-    }
-  } catch {
-    Write-Host "SSM Agent not ready yet, retrying..."
-  }
-  Start-Sleep -Seconds 10
-  $retryCount++
-}
+Write-Host "Enabling WinRM for remote management..."
 
-if ($retryCount -eq $maxRetries) {
-  Write-Host "SSM Agent failed to become ready after 5 minutes."
+# Enable PowerShell remoting
+Enable-PSRemoting -Force
+
+# Configure WinRM to allow unencrypted traffic (for basic auth)
+Set-Item WSMan:\localhost\Service\AllowUnencrypted -Value $true
+
+# Configure WinRM to allow basic authentication
+Set-Item WSMan:\localhost\Service\Auth\Basic -Value $true
+
+# Set WinRM service to start automatically
+Set-Service WinRM -StartupType Automatic
+
+# Start WinRM service
+Start-Service WinRM
+
+# Configure firewall to allow WinRM
+netsh advfirewall firewall add rule name="WinRM-HTTP" dir=in localport=5985 protocol=TCP action=allow
+
+# Allow WinRM through Windows Firewall
+Set-NetFirewallRule -Name "WINRM-HTTP-In-TCP" -Enabled True
+
+# Test WinRM connectivity
+try {
+  $winrmStatus = Get-Service WinRM
+  if ($winrmStatus.Status -eq "Running") {
+    Write-Host "WinRM is enabled and running."
+  } else {
+    Write-Host "WinRM service is not running."
+  }
+} catch {
+  Write-Host "Failed to check WinRM status: $_"
 }
 
 </powershell>
