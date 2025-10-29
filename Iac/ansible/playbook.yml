@@ -17,9 +17,8 @@
     # ----------------------------
     # Verify SSM connectivity
     # ----------------------------
-    - name: Verify SSM connectivity
-      amazon.aws.ssm_ping: 
-        region: "{{ aws_region }}"
+    - name: Ping the instance to verify SSM connectivity
+      ansible.builtin.ping:
       retries: 5
       delay: 10
       until: result is succeeded
@@ -193,4 +192,3 @@
               Set-Service -Name "{{ app_service_name }}" -StartupType Automatic
         targets:
           - "Key=instanceIds,Values={{ inventory_hostname }}"
-
