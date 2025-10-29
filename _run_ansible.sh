@@ -65,38 +65,37 @@ WAIT_TIME=30
 RETRY_COUNT=0
 
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-  # Check SSM availability
-  READY=$(aws ssm describe-instance-information --query 'InstanceInformationList[?PingStatus==`Online`].InstanceId' --output text | wc -w)
-  
-  # Check EC2 health status
-  INSTANCE_IDS=$(jq -r '.cloned_instance_ids.value | join(" ")' < ../terraform/outputs.json)
-  INSTANCE_STATUS=$(aws ec2 describe-instance-status --instance-ids $INSTANCE_IDS --query 'InstanceStatuses[*].InstanceState.Name' --output text)
-  HEALTH_CHECKS=$(aws ec2 describe-instance-status --instance-ids $INSTANCE_IDS --query 'InstanceStatuses[*].SystemStatus.Status' --output text)
-
   # Read expected count from the copied outputs file
   EXPECTED=$(jq -r '.cloned_instance_ids.value | length' < ../terraform/outputs.json 2>/dev/null || echo 0)
 
-  # If all conditions are met (SSM is online, EC2 running, health checks are ok)
-  if [ "$EXPECTED" -gt 0 ] && [ "$READY" -ge "$EXPECTED" ] && [ "$INSTANCE_STATUS" == "running" ] && [ "$HEALTH_CHECKS" == "ok" ]; then
-    echo "SSM shows $READY/$EXPECTED Online, EC2 instances are running, and health checks passed."
+  if [ "$EXPECTED" -eq 0 ]; then
+    echo "No instances expected, skipping wait."
     break
   fi
 
-  # If health check is still "initializing", continue retrying
-  if [[ "$HEALTH_CHECKS" == "initializing" ]]; then
-    echo "Health check is 'initializing' — retrying in $WAIT_TIME seconds..."
-  else
-    echo "SSM: $READY/$EXPECTED Online, EC2 Status: $INSTANCE_STATUS, Health Checks: $HEALTH_CHECKS — retrying in $WAIT_TIME seconds..."
+  # Check SSM availability
+  READY=$(aws ssm describe-instance-information --query 'InstanceInformationList[?PingStatus==`Online`].InstanceId' --output text | wc -w)
+
+  # Check EC2 instance states and health (handle multiple instances by counting)
+  INSTANCE_IDS=$(jq -r '.cloned_instance_ids.value | join(" ")' < ../terraform/outputs.json)
+  INSTANCE_STATUS_COUNT=$(aws ec2 describe-instance-status --instance-ids $INSTANCE_IDS --query 'InstanceStatuses[*].InstanceState.Name' --output text 2>/dev/null | grep -c "running" || echo 0)
+  HEALTH_CHECKS_COUNT=$(aws ec2 describe-instance-status --instance-ids $INSTANCE_IDS --query 'InstanceStatuses[*].SystemStatus.Status' --output text 2>/dev/null | grep -c "ok\|initializing" || echo 0)
+  HEALTH_OK_COUNT=$(aws ec2 describe-instance-status --instance-ids $INSTANCE_IDS --query 'InstanceStatuses[*].SystemStatus.Status' --output text 2>/dev/null | grep -c "ok" || echo 0)
+
+  if [ "$READY" -ge "$EXPECTED" ] && [ "$INSTANCE_STATUS_COUNT" -eq "$EXPECTED" ] && [ "$HEALTH_OK_COUNT" -eq "$EXPECTED" ]; then
+    echo "All checks passed: SSM $READY/$EXPECTED Online, $INSTANCE_STATUS_COUNT/$EXPECTED running, $HEALTH_OK_COUNT/$EXPECTED healthy."
+    break
   fi
 
+  echo "Waiting: SSM $READY/$EXPECTED Online, $INSTANCE_STATUS_COUNT/$EXPECTED running, $HEALTH_CHECKS_COUNT/$EXPECTED initializing or healthy — retrying in $WAIT_TIME seconds..."
   sleep $WAIT_TIME
   ((RETRY_COUNT++))
 done
 
 # Check if we broke out of the loop due to timeout
-if [ "$READY" -lt "$EXPECTED" ] || [ "$INSTANCE_STATUS" != "running" ] || [ "$HEALTH_CHECKS" != "ok" ]; then
+if [ "$RETRY_COUNT" -eq "$MAX_RETRIES" ]; then
     echo "Timeout: Not all instances are online or healthy after $((MAX_RETRIES * WAIT_TIME)) seconds."
-    echo "Error: Unable to detect all instances online or healthy."
+    echo "Final status: SSM $READY/$EXPECTED Online, $INSTANCE_STATUS_COUNT/$EXPECTED running, $HEALTH_OK_COUNT/$EXPECTED healthy."
     exit 1
 fi
 
