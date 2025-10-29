@@ -17,8 +17,8 @@
     # ----------------------------
     # Verify SSM connectivity
     # ----------------------------
-    - name: Ping the instance to verify SSM connectivity
-      ansible.builtin.ping:
+    - name: Ping the Windows instance to verify connectivity
+      ansible.windows.win_ping:
       retries: 5
       delay: 10
       until: result is succeeded
