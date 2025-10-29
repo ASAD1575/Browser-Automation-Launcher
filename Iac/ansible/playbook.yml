@@ -27,90 +27,55 @@
     # Ensure user is logged in for scheduled task to run
     # ----------------------------
     - name: Ensure user is logged in for scheduled task to run (via SYSTEM)
-      amazon.aws.ssm_command:
-        document_name: "AWS-RunPowerShellScript"
-        parameters:
-          commands:
-            - |
-              $command = "schtasks /run /tn 'AutoUserLogin'"  # Replace 'AutoUserLogin' with your Task Scheduler task name.
-              Start-Process -FilePath "cmd.exe" -ArgumentList "/c $command" -Credential (New-Object System.Management.Automation.PSCredential('NT AUTHORITY\\SYSTEM', (ConvertTo-SecureString '' -AsPlainText -Force)))
-        targets:
-          - "Key=instanceIds,Values={{ inventory_hostname }}"
+      ansible.windows.win_command:
+        cmd: |
+          $command = "schtasks /run /tn 'AutoUserLogin'"  # Replace 'AutoUserLogin' with your Task Scheduler task name.
+          Start-Process -FilePath "cmd.exe" -ArgumentList "/c $command" -Credential (New-Object System.Management.Automation.PSCredential('NT AUTHORITY\\SYSTEM', (ConvertTo-SecureString '' -AsPlainText -Force)))
       when: run_user_actions | bool
 
     # ----------------------------
     # Install CloudWatch Agent (MSI with retry)
     # ----------------------------
     - name: Download CW agent MSI
-      amazon.aws.ssm_command:
-        document_name: "AWS-RunPowerShellScript"
-        parameters:
-          commands:
-            - |
-              Invoke-WebRequest -Uri "https://s3.amazonaws.com/amazoncloudwatch-agent/windows/amd64/latest/amazon-cloudwatch-agent.msi" -OutFile "C:\\Windows\\Temp\\amazon-cloudwatch-agent.msi"
-        targets:
-          - "Key=instanceIds,Values={{ inventory_hostname }}"
+      ansible.windows.win_command:
+        cmd: |
+          Invoke-WebRequest -Uri "https://s3.amazonaws.com/amazoncloudwatch-agent/windows/amd64/latest/amazon-cloudwatch-agent.msi" -OutFile "C:\\Windows\\Temp\\amazon-cloudwatch-agent.msi"
 
     - name: Install CW agent (idempotent)
-      amazon.aws.ssm_command:
-        document_name: "AWS-RunPowerShellScript"
-        parameters:
-          commands:
-            - |
-              Start-Process msiexec.exe -ArgumentList "/i C:\\Windows\\Temp\\amazon-cloudwatch-agent.msi /qn /norestart" -NoNewWindow -Wait
-        targets:
-          - "Key=instanceIds,Values={{ inventory_hostname }}"
+      ansible.windows.win_command:
+        cmd: |
+          Start-Process msiexec.exe -ArgumentList "/i C:\\Windows\\Temp\\amazon-cloudwatch-agent.msi /qn /norestart" -NoNewWindow -Wait
 
     - name: Ensure CW agent service running
-      amazon.aws.ssm_command:
-        document_name: "AWS-RunPowerShellScript"
-        parameters:
-          commands:
-            - |
-              Start-Service -Name AmazonCloudWatchAgent
-              Set-Service -Name AmazonCloudWatchAgent -StartupType Automatic
-        targets:
-          - "Key=instanceIds,Values={{ inventory_hostname }}"
+      ansible.windows.win_service:
+        name: AmazonCloudWatchAgent
+        start_mode: auto
+        state: started
 
     # ----------------------------
     # Read InstanceID and Name (IMDSv2)
     # ----------------------------
     - name: Get IMDS token
-      amazon.aws.ssm_command:
-        document_name: "AWS-RunPowerShellScript"
-        parameters:
-          commands:
-            - |
-              $url = "http://169.254.169.254/latest/api/token"
-              $headers = @{ "X-aws-ec2-metadata-token-ttl-seconds" = "21600" }
-              $token = Invoke-RestMethod -Uri $url -Method PUT -Headers $headers
-        targets:
-          - "Key=instanceIds,Values={{ inventory_hostname }}"
+      ansible.windows.win_command:
+        cmd: |
+          $url = "http://169.254.169.254/latest/api/token"
+          $headers = @{ "X-aws-ec2-metadata-token-ttl-seconds" = "21600" }
+          $token = Invoke-RestMethod -Uri $url -Method PUT -Headers $headers
       register: imds_t
       failed_when: false
 
     - name: Read instance-id
-      amazon.aws.ssm_command:
-        document_name: "AWS-RunPowerShellScript"
-        parameters:
-          commands:
-            - |
-              $instance_id = Invoke-RestMethod -Uri "http://169.254.169.254/latest/meta-data/instance-id" -Headers @{ "X-aws-ec2-metadata-token" = "{{ imds_t.content }}" }
-              Write-Output $instance_id
-        targets:
-          - "Key=instanceIds,Values={{ inventory_hostname }}"
+      ansible.windows.win_command:
+        cmd: |
+          $instance_id = Invoke-RestMethod -Uri "http://169.254.169.254/latest/meta-data/instance-id" -Headers @{ "X-aws-ec2-metadata-token" = "{{ imds_t.content }}" }
+          Write-Output $instance_id
       register: iid
 
     - name: Read Name tag (requires instance_metadata_tags=enabled on EC2)
-      amazon.aws.ssm_command:
-        document_name: "AWS-RunPowerShellScript"
-        parameters:
-          commands:
-            - |
-              $name_tag = Invoke-RestMethod -Uri "http://169.254.169.254/latest/meta-data/tags/instance/Name" -Headers @{ "X-aws-ec2-metadata-token" = "{{ imds_t.content }}" }
-              Write-Output $name_tag
-        targets:
-          - "Key=instanceIds,Values={{ inventory_hostname }}"
+      ansible.windows.win_command:
+        cmd: |
+          $name_tag = Invoke-RestMethod -Uri "http://169.254.169.254/latest/meta-data/tags/instance/Name" -Headers @{ "X-aws-ec2-metadata-token" = "{{ imds_t.content }}" }
+          Write-Output $name_tag
       register: iname
       failed_when: false
 
@@ -169,26 +134,16 @@
         force: yes
 
     - name: Restart CW agent with local config
-      amazon.aws.ssm_command:
-        document_name: "AWS-RunPowerShellScript"
-        parameters:
-          commands:
-            - |
-              & "C:\Program Files\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent-ctl.ps1" -a stop
-              & "C:\Program Files\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent-ctl.ps1" -a start -m ec2 -c file:C:\ProgramData\Amazon\AmazonCloudWatchAgent\config.json
-        targets:
-          - "Key=instanceIds,Values={{ inventory_hostname }}"
+      ansible.windows.win_command:
+        cmd: |
+          & "C:\Program Files\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent-ctl.ps1" -a stop
+          & "C:\Program Files\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent-ctl.ps1" -a start -m ec2 -c file:C:\ProgramData\Amazon\AmazonCloudWatchAgent\config.json
 
     # ----------------------------
     # Ensure your app service is Automatic + Started
     # ----------------------------
     - name: Start your service
-      amazon.aws.ssm_command:
-        document_name: "AWS-RunPowerShellScript"
-        parameters:
-          commands:
-            - |
-              Start-Service -Name "{{ app_service_name }}"
-              Set-Service -Name "{{ app_service_name }}" -StartupType Automatic
-        targets:
-          - "Key=instanceIds,Values={{ inventory_hostname }}"
+      ansible.windows.win_service:
+        name: "{{ app_service_name }}"
+        start_mode: auto
+        state: started
