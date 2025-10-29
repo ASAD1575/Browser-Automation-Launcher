@@ -76,9 +76,15 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
   # Read expected count from the copied outputs file
   EXPECTED=$(jq -r '.cloned_instance_ids.value | length' < ../terraform/outputs.json 2>/dev/null || echo 0)
 
+  # If all conditions are met (SSM is online, EC2 running, health checks are ok)
   if [ "$EXPECTED" -gt 0 ] && [ "$READY" -ge "$EXPECTED" ] && [ "$INSTANCE_STATUS" == "running" ] && [ "$HEALTH_CHECKS" == "ok" ]; then
     echo "SSM shows $READY/$EXPECTED Online, EC2 instances are running, and health checks passed."
     break
+  fi
+
+  # If health check is not "ok", show the status and retry
+  if [[ "$HEALTH_CHECKS" != "ok" && "$HEALTH_CHECKS" != "initializing" ]]; then
+    echo "Health check not 'ok' — retrying in $WAIT_TIME seconds..."
   fi
 
   echo "SSM: $READY/$EXPECTED Online, EC2 Status: $INSTANCE_STATUS, Health Checks: $HEALTH_CHECKS — retrying in $WAIT_TIME seconds..."
