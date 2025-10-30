@@ -1,7 +1,7 @@
 # group_vars/windows.yml
 ansible_connection: amazon.aws.aws_ssm
 ansible_shell_type: powershell
-ansible_become: false
+# ansible_become: false
 
 # --- CRITICAL FIX: Explicitly set connection credentials using environment lookup ---
 # This ensures that even if this file is loaded, it correctly pulls the credentials
@@ -11,5 +11,5 @@ ansible_user: "{{ lookup('env', 'TF_VAR_WINDOWS_USERNAME') }}"
 ansible_password: "{{ lookup('env', 'TF_VAR_WINDOWS_PASSWORD') }}"
 
 # Optional, but often helpful for shell commands running as Administrator
-# ansible_become: true 
-# ansible_become_method: runas
+ansible_become: true 
+ansible_become_method: runas
