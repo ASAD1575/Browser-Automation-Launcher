@@ -17,7 +17,7 @@ resource "aws_instance" "cloned_instance" {
 
   user_data = <<-EOF
 <powershell>
-${file("../scripts/setup_login.ps1")}
+${file("../../scripts/setup_login.ps1")}
 </powershell>
 EOF
 
