@@ -230,16 +230,12 @@ jobs:
           role-to-assume: arn:aws:iam::375299695019:role/GitHubActionsTerraformRole
           aws-region: us-east-1
 
-        # Set the environment variables from GitHub secrets or variables
-      - name: Set Environment Variables
-        run: |
-          echo "TF_VAR_WINDOWS_USERNAME=${{ secrets.WINDOWS_USERNAME }}" >> .env.ansible
-          echo "TF_VAR_WINDOWS_PASSWORD=${{ secrets.WINDOWS_PASSWORD }}" >> .env.ansible
-      
       - name: Install AWS Session Manager Plugin
         uses: ankurk91/install-session-manager-plugin-action@v1
 
       - name: Check Instance Readiness
         run: |
+          export TF_VAR_WINDOWS_USERNAME="${{ secrets.WINDOWS_USERNAME }}"
+          export TF_VAR_WINDOWS_PASSWORD="${{ secrets.WINDOWS_PASSWORD }}"
           chmod +x ./instance_readiness_checker.sh
           ./instance_readiness_checker.sh
