@@ -39,10 +39,17 @@ fi
 cd Iac/ansible
 
 # Install Ansible + deps
-echo "Installing Ansible and dependencies..."
 python -m pip install --upgrade pip
-pip install "ansible==9.6.0" "boto3>=1.34.0" "botocore>=1.34.0"
-pip install pywinrm requests-ntlm
+
+# Use ansible-core instead of the meta "ansible" package
+pip install \
+  "ansible-core==2.16.7" \
+  "boto3>=1.34,<2" \
+  "botocore>=1.34,<2" \
+  "pywinrm>=0.4.3" \
+  "requests-ntlm>=1.1.0"
+
+# Install collections pinned to stable versions compatible with core 2.16.x
 ansible-galaxy collection install \
   amazon.aws:==7.5.0 \
   community.aws:==7.2.1 \
