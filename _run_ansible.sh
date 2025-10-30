@@ -41,8 +41,13 @@ cd Iac/ansible
 # Install Ansible + deps
 echo "Installing Ansible and dependencies..."
 python -m pip install --upgrade pip
-pip install "ansible>=9" boto3 botocore pywinrm requests-ntlm
-ansible-galaxy collection install amazon.aws community.aws ansible.windows community.windows
+pip install "ansible==9.6.0" "boto3>=1.34.0" "botocore>=1.34.0"
+pip install pywinrm requests-ntlm
+ansible-galaxy collection install \
+  amazon.aws:==7.5.0 \
+  community.aws:==7.2.1 \
+  ansible.windows:==2.2.0 \
+  community.windows:==2.2.0
 
 # =======================================================
 # FIX: Load Ansible env BEFORE the wait block begins, 

@@ -2,8 +2,17 @@
 - name: Bootstrap CW agent + start service + (optionally) run as a specific user
   hosts: windows
   gather_facts: no
-  connection: amazon.aws.aws_ssm  # Using the SSM connection plugin
+  connection: amazon.aws.aws_ssm
+
   vars:
+    # --- Transport hardening (critical) ---
+    ansible_shell_type: powershell
+    ansible_shell_executable: powershell.exe
+    ansible_become: false                         # don't escalate until transport is confirmed
+    ansible_aws_ssm_document_name: AWS-RunPowerShellScript
+    ansible_aws_ssm_timeout: 1800                 # 30m overall
+    ansible_aws_ssm_poll_interval: 3              # poll every 3s
+
     # --- Your service + logs ---
     app_service_name: "BrowserAutomationLauncher"
     cw_log_group_name: "/prod/Browser-Automation-Launcher/app"
@@ -17,35 +26,36 @@
     # ----------------------------
     # Verify SSM connectivity
     # ----------------------------
-    - name: Ping the Windows instance to verify connectivity (SSM Shell Check)
-      ansible.builtin.shell:
-        cmd: echo "SSM is connected and running commands"
-      retries: 5
+    - name: Ping the Windows instance (SSM)
+      ansible.windows.win_ping:
+      register: ping_result
+      retries: 6
       delay: 10
-      until: result is succeeded
+      until: ping_result is success
+      become: false
 
     # ----------------------------
-    # Ensure user is logged in for scheduled task to run
+    # (Optional) Trigger your scheduled task to ensure user session starts
     # ----------------------------
-    - name: Ensure user is logged in for scheduled task to run (via SYSTEM)
-      ansible.windows.win_command:
-        cmd: |
-          $command = "schtasks /run /tn 'AutoUserLogin'"  # Replace 'AutoUserLogin' with your Task Scheduler task name.
-          Start-Process -FilePath "cmd.exe" -ArgumentList "/c $command" -Credential (New-Object System.Management.Automation.PSCredential('NT AUTHORITY\\SYSTEM', (ConvertTo-SecureString '' -AsPlainText -Force)))
+    - name: Ensure user is logged in for scheduled task to run
+      ansible.windows.win_shell: |
+        schtasks /run /tn "AutoUserLogin"
       when: run_user_actions | bool
 
     # ----------------------------
     # Install CloudWatch Agent (MSI with retry)
     # ----------------------------
     - name: Download CW agent MSI
-      ansible.windows.win_command:
-        cmd: |
-          Invoke-WebRequest -Uri "https://s3.amazonaws.com/amazoncloudwatch-agent/windows/amd64/latest/amazon-cloudwatch-agent.msi" -OutFile "C:\\Windows\\Temp\\amazon-cloudwatch-agent.msi"
+      ansible.windows.win_get_url:
+        url: https://s3.amazonaws.com/amazoncloudwatch-agent/windows/amd64/latest/amazon-cloudwatch-agent.msi
+        dest: C:\Windows\Temp\amazon-cloudwatch-agent.msi
+        force: yes
 
     - name: Install CW agent (idempotent)
-      ansible.windows.win_command:
-        cmd: |
-          Start-Process msiexec.exe -ArgumentList "/i C:\\Windows\\Temp\\amazon-cloudwatch-agent.msi /qn /norestart" -NoNewWindow -Wait
+      ansible.windows.win_package:
+        path: C:\Windows\Temp\amazon-cloudwatch-agent.msi
+        arguments: /qn /norestart
+        state: present
 
     - name: Ensure CW agent service running
       ansible.windows.win_service:
@@ -54,41 +64,48 @@
         state: started
 
     # ----------------------------
-    # Read InstanceID and Name (IMDSv2)
+    # Read InstanceID and Name (IMDSv2)  **FIX: use stdout, not .content**
     # ----------------------------
-    - name: Get IMDS token
-      ansible.windows.win_command:
-        cmd: |
-          $url = "http://169.254.169.254/latest/api/token"
-          $headers = @{ "X-aws-ec2-metadata-token-ttl-seconds" = "21600" }
-          $token = Invoke-RestMethod -Uri $url -Method PUT -Headers $headers
+    - name: Get IMDS token (best-effort)
+      ansible.windows.win_shell: |
+        $url = "http://169.254.169.254/latest/api/token"
+        $headers = @{ "X-aws-ec2-metadata-token-ttl-seconds" = "21600" }
+        try { Invoke-RestMethod -Uri $url -Method PUT -Headers $headers } catch { "" }
       register: imds_t
+      changed_when: false
       failed_when: false
 
     - name: Read instance-id
-      ansible.windows.win_command:
-        cmd: |
-          $instance_id = Invoke-RestMethod -Uri "http://169.254.169.254/latest/meta-data/instance-id" -Headers @{ "X-aws-ec2-metadata-token" = "{{ imds_t.content }}" }
-          Write-Output $instance_id
+      ansible.windows.win_shell: |
+        $headers = @{}
+        if ("{{ imds_t.stdout | trim }}") { $headers["X-aws-ec2-metadata-token"] = "{{ imds_t.stdout | trim }}" }
+        Invoke-RestMethod -Uri "http://169.254.169.254/latest/meta-data/instance-id" -Headers $headers
       register: iid
+      changed_when: false
 
     - name: Read Name tag (requires instance_metadata_tags=enabled on EC2)
-      ansible.windows.win_command:
-        cmd: |
-          $name_tag = Invoke-RestMethod -Uri "http://169.254.169.254/latest/meta-data/tags/instance/Name" -Headers @{ "X-aws-ec2-metadata-token" = "{{ imds_t.content }}" }
-          Write-Output $name_tag
+      ansible.windows.win_shell: |
+        $headers = @{}
+        if ("{{ imds_t.stdout | trim }}") { $headers["X-aws-ec2-metadata-token"] = "{{ imds_t.stdout | trim }}" }
+        try { Invoke-RestMethod -Uri "http://169.254.169.254/latest/meta-data/tags/instance/Name" -Headers $headers } catch { "" }
       register: iname
+      changed_when: false
       failed_when: false
 
     - name: Set stream prefix
       ansible.builtin.set_fact:
-        cw_stream_prefix: "{{ (iid.content | default('unknown-id')) | trim }}/{{ (iname.content | default('UnknownName')) | trim }}"
+        cw_stream_prefix: "{{ (iid.stdout | default('unknown-id')) | trim }}/{{ (iname.stdout | default('UnknownName')) | trim }}"
 
     # ----------------------------
     # Write local CW agent config (InstanceID/Name in streams)
     # ----------------------------
+    - name: Ensure CW config dir exists
+      ansible.windows.win_file:
+        path: C:\ProgramData\Amazon\AmazonCloudWatchAgent
+        state: directory
+
     - name: Render CW agent config
-      ansible.builtin.copy:
+      ansible.windows.win_copy:
         dest: C:\ProgramData\Amazon\AmazonCloudWatchAgent\config.json
         content: |
           {
@@ -97,13 +114,13 @@
                 "files": {
                   "collect_list": [
                     {
-                      "file_path": "C:\\\\Users\\\\Administrator\\\\Documents\\\\applications\\\\browser-automation-launcher\\\\logs\\\\monitor.log",
+                      "file_path": "C:\\Users\\Administrator\\Documents\\applications\\browser-automation-launcher\\logs\\monitor.log",
                       "log_group_name": "{{ cw_log_group_name }}",
                       "log_stream_name": "{{ cw_stream_prefix }}/monitor.log",
                       "timestamp_format": "%Y-%m-%d %H:%M:%S"
                     },
                     {
-                      "file_path": "C:\\\\Users\\\\Administrator\\\\Documents\\\\applications\\\\browser-automation-launcher\\\\logs\\\\app.log",
+                      "file_path": "C:\\Users\\Administrator\\Documents\\applications\\browser-automation-launcher\\logs\\app.log",
                       "log_group_name": "{{ cw_log_group_name }}",
                       "log_stream_name": "{{ cw_stream_prefix }}/app.log",
                       "timestamp_format": "%Y-%m-%d %H:%M:%S"
@@ -135,10 +152,9 @@
         force: yes
 
     - name: Restart CW agent with local config
-      ansible.windows.win_command:
-        cmd: |
-          & "C:\Program Files\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent-ctl.ps1" -a stop
-          & "C:\Program Files\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent-ctl.ps1" -a start -m ec2 -c file:C:\ProgramData\Amazon\AmazonCloudWatchAgent\config.json
+      ansible.windows.win_shell: |
+        & "C:\Program Files\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent-ctl.ps1" -a stop
+        & "C:\Program Files\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent-ctl.ps1" -a start -m ec2 -c file:C:\ProgramData\Amazon\AmazonCloudWatchAgent\config.json
 
     # ----------------------------
     # Ensure your app service is Automatic + Started
