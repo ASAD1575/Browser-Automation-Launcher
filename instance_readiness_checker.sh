@@ -46,7 +46,7 @@ RETRY_COUNT=0
 
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
   # Read expected count from the copied outputs file
-  EXPECTED=$(jq -r '.cloned_instance_ids.value | length' < ../terraform/outputs.json 2>/dev/null || echo 0)
+  EXPECTED=$(jq -r '.cloned_instance_ids.value | length' < Iac/terraform/outputs.json 2>/dev/null || echo 0)
 
   if [ "$EXPECTED" -eq 0 ]; then
     echo "No instances expected, skipping wait."
@@ -54,7 +54,7 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
   fi
 
   # --- Collect Instance IDs ---
-  INSTANCE_IDS=$(jq -r '.cloned_instance_ids.value | join(" ")' < ../terraform/outputs.json 2>/dev/null || echo "")
+  INSTANCE_IDS=$(jq -r '.cloned_instance_ids.value | join(" ")' < Iac/terraform/outputs.json 2>/dev/null || echo "")
   if [ -z "$INSTANCE_IDS" ]; then
     # Reset counts if no instances found, though EXPECTED should be 0 in this case
     RUNNING_COUNT=0
@@ -123,4 +123,4 @@ if [ "$RETRY_COUNT" -eq "$MAX_RETRIES" ]; then
 fi
 
 echo "All EC2 instances are fully initialized and ready for SSM."
-exit 1
+exit 0

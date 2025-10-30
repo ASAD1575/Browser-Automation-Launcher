@@ -1,125 +1,185 @@
+user_data = <<-EOF
 <powershell>
+$ErrorActionPreference = "Stop"
+Start-Transcript -Path "C:\\ProgramData\\cloudwatch-bootstrap.log" -Append
+
 # ----------------------------
-# 1) Ensure SSM Agent is Installed & Running
+# 0) Helpers
 # ----------------------------
-Write-Host "Checking SSM Agent..."
+function Get-IMDSToken {
+  try {
+    $res = Invoke-RestMethod -Uri "http://169.254.169.254/latest/api/token" -Method PUT -Headers @{"X-aws-ec2-metadata-token-ttl-seconds"="21600"} -TimeoutSec 5
+    return $res
+  } catch { return $null }
+}
+
+function Get-IMDS($path, $token) {
+  $headers = @{}
+  if ($token) { $headers["X-aws-ec2-metadata-token"] = $token }
+  return Invoke-RestMethod -Uri "http://169.254.169.254/latest/$path" -Headers $headers -TimeoutSec 5
+}
+
+# ----------------------------
+# 1) Ensure SSM Agent present & running
+# ----------------------------
 if (-not (Get-Service AmazonSSMAgent -ErrorAction SilentlyContinue)) {
   Write-Host "Installing SSM Agent..."
-
-  # Get region from IMDSv2
-  $token = Invoke-RestMethod -Uri "http://169.254.169.254/latest/api/token" -Method PUT -Headers @{"X-aws-ec2-metadata-token-ttl-seconds"="21600"} -TimeoutSec 5
-  $region = Invoke-RestMethod -Uri "http://169.254.169.254/latest/meta-data/placement/region" -Headers @{ "X-aws-ec2-metadata-token" = $token } -TimeoutSec 5
-
-  if (-not $region) { $region = "us-east-1" } # fallback region
-
+  $region = (Get-IMDS "meta-data/placement/region" (Get-IMDSToken))
+  if (-not $region) { $region = "${var.region}" } # fallback to TF var
   $ssmUrl = "https://s3.amazonaws.com/amazon-ssm-$region/latest/windows_amd64/AmazonSSMAgentSetup.exe"
   $ssmExe = "C:\\Windows\\Temp\\AmazonSSMAgentSetup.exe"
   Invoke-WebRequest -Uri $ssmUrl -OutFile $ssmExe -UseBasicParsing
   Start-Process -FilePath $ssmExe -ArgumentList "/S" -Wait
 }
-
 try {
   Start-Service AmazonSSMAgent
   Set-Service -Name AmazonSSMAgent -StartupType Automatic
-  Write-Host "SSM Agent is installed and running."
-} catch {
-  Write-Host "Failed to start SSM Agent: $_"
-}
+} catch { Write-Host "SSM start failed: $_" }
 
 # ----------------------------
-# 2) Create User and Enable Auto-Login
+# 2) Configure Auto-Login
 # ----------------------------
-$Username = "Administrator"
-$Password = "${windows_password}" | ConvertTo-SecureString -AsPlainText -Force
+Write-Host "Configuring Windows Auto-Login..."
+$Username = "${var.windows_username}"     # Example: ticketboat
+$PasswordPlain = "${var.windows_password}"
+$Password = $PasswordPlain | ConvertTo-SecureString -AsPlainText -Force
 $RegPath  = "HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon"
 
-Write-Host "Ensuring local user '$Username' exists..."
+# Ensure user exists
 if (-not (Get-LocalUser -Name $Username -ErrorAction SilentlyContinue)) {
-  New-LocalUser -Name $Username -Password $Password -FullName "Ticket Boat User" -Description "Auto-login user"
+  Write-Host "Creating local user $Username..."
+  New-LocalUser -Name $Username -Password $Password -FullName "AutoLogin User" -Description "Automatically logged in on startup"
   Add-LocalGroupMember -Group "Administrators" -Member $Username
 } else {
-  Write-Host "User already exists. Updating password..."
+  Write-Host "User $Username exists. Updating password..."
   Set-LocalUser -Name $Username -Password $Password
 }
 
-Write-Host "Configuring Windows Auto-Login..."
-Set-ItemProperty -Path $RegPath -Name "AutoAdminLogon" -Value "1" -Type String
-Set-ItemProperty -Path $RegPath -Name "DefaultUsername" -Value $Username -Type String
-Set-ItemProperty -Path $RegPath -Name "DefaultPassword" -Value "${windows_password}" -Type String
-Set-ItemProperty -Path $RegPath -Name "DefaultDomainName" -Value $env:COMPUTERNAME -Type String
+# Enable auto-login via registry
+Set-ItemProperty -Path $RegPath -Name "AutoAdminLogon" -Value "1"
+Set-ItemProperty -Path $RegPath -Name "DefaultUsername" -Value $Username
+Set-ItemProperty -Path $RegPath -Name "DefaultPassword" -Value $PasswordPlain
+Set-ItemProperty -Path $RegPath -Name "DefaultDomainName" -Value $env:COMPUTERNAME
+Write-Host "Auto-login enabled for user '$Username'."
 
 # ----------------------------
-# 3) Install CloudWatch Agent
+# 3) Schedule Task to Trigger Auto Login After Reboot
 # ----------------------------
-Write-Host "Installing CloudWatch Agent..."
-$CwMsi = "C:\\Windows\\Temp\\amazon-cloudwatch-agent.msi"
-Invoke-WebRequest -Uri "https://s3.amazonaws.com/amazoncloudwatch-agent/windows/amd64/latest/amazon-cloudwatch-agent.msi" -OutFile $CwMsi -UseBasicParsing
-Start-Process msiexec.exe -ArgumentList "/i $CwMsi /qn /norestart" -Wait
+$TaskName = "ForceAutoLogin"
+$TaskScript = "C:\\ProgramData\\trigger_autologin.ps1"
+$ScriptContent = @"
+Start-Sleep -Seconds 10
+Write-Host 'Triggering auto-login session...'
+rundll32.exe user32.dll, LockWorkStation
+rundll32.exe user32.dll, LockWorkStation
+"@
+$ScriptContent | Out-File -FilePath $TaskScript -Encoding ASCII -Force
+
+# Register scheduled task that runs immediately on startup (SYSTEM)
+$Action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -File `"$TaskScript`""
+$Trigger = New-ScheduledTaskTrigger -AtStartup
+Register-ScheduledTask -Action $Action -Trigger $Trigger -TaskName $TaskName -RunLevel Highest -User "SYSTEM" -Force
+Write-Host "Scheduled auto-login trigger task created."
 
 # ----------------------------
-# 4) Build CloudWatch Config (Terraform-safe JSON)
+# 4) Install CloudWatch Agent via MSI (with retries)
 # ----------------------------
-Write-Host "Creating CloudWatch Agent configuration..."
-$CWConfig = '${jsonencode({
-  logs = {
-    logs_collected = {
-      files = {
-        collect_list = [
-          {
-            file_path        = "C:\\Users\\Administrator\\Documents\\applications\\browser-automation-launcher\\logs\\monitor.log"
-            log_group_name   = "/prod/Browser-Automation-Launcher/app"
-            log_stream_name  = "monitor.log"
-            timestamp_format = "%Y-%m-%d %H:%M:%S"
+$msiUrl  = "https://s3.amazonaws.com/amazoncloudwatch-agent/windows/amd64/latest/amazon-cloudwatch-agent.msi"
+$msiPath = "C:\\Windows\\Temp\\amazon-cloudwatch-agent.msi"
+$retries = 5
+for ($i=0; $i -lt $retries; $i++) {
+  try {
+    Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath -UseBasicParsing
+    Start-Process msiexec.exe -ArgumentList @("/i",$msiPath,"/qn","/norestart") -Wait
+    break
+  } catch {
+    Start-Sleep -Seconds 10
+    if ($i -eq ($retries-1)) { throw }
+  }
+}
+
+# ----------------------------
+# 5) Build CW Agent config with {InstanceID}/{InstanceName}
+# ----------------------------
+$token = Get-IMDSToken
+$InstanceId = Get-IMDS "meta-data/instance-id" $token
+$InstanceName = $null
+try { $InstanceName = Get-IMDS "meta-data/tags/instance/Name" $token } catch { $InstanceName = $null }
+if (-not $InstanceName) { $InstanceName = "UnknownName" }
+$StreamPrefix = "$InstanceId/$InstanceName"
+
+$CwConfig = @{
+  logs = @{
+    logs_collected = @{
+      files = @{
+        collect_list = @(
+          @{
+            file_path       = "C:\\Users\\Administrator\\Documents\\applications\\browser-automation-launcher\\logs\\monitor.log"
+            log_group_name  = "${var.cw_log_group_name}"
+            log_stream_name = "$StreamPrefix/monitor.log"
+            timestamp_format= "%Y-%m-%d %H:%M:%S"
           },
-          {
-            file_path        = "C:\\Users\\Administrator\\Documents\\applications\\browser-automation-launcher\\logs\\app.log"
-            log_group_name   = "/prod/Browser-Automation-Launcher/app"
-            log_stream_name  = "app.log"
-            timestamp_format = "%Y-%m-%d %H:%M:%S"
+          @{
+            file_path       = "C:\\Users\\Administrator\\Documents\\applications\\browser-automation-launcher\\logs\\app.log"
+            log_group_name  = "${var.cw_log_group_name}"
+            log_stream_name = "$StreamPrefix/app.log"
+            timestamp_format= "%Y-%m-%d %H:%M:%S"
           }
-        ]
+        )
       }
-      windows_events = {
-        collect_list = [
-          {
-            event_levels     = ["ERROR", "WARNING"]
-            event_format     = "xml"
-            log_group_name   = "/prod/Browser-Automation-Launcher/app"
-            log_stream_name  = "EventLog/System"
-            event_name       = "System"
+      windows_events = @{
+        collect_list = @(
+          @{
+            event_levels    = @("ERROR","WARNING")
+            event_format    = "xml"
+            log_group_name  = "${var.cw_log_group_name}"
+            log_stream_name = "$StreamPrefix/EventLog/System"
+            event_name      = "System"
           },
-          {
-            event_levels     = ["ERROR", "WARNING"]
-            event_format     = "xml"
-            log_group_name   = "/prod/Browser-Automation-Launcher/app"
-            log_stream_name  = "EventLog/Application"
-            event_name       = "Application"
+          @{
+            event_levels    = @("ERROR","WARNING")
+            event_format    = "xml"
+            log_group_name  = "${var.cw_log_group_name}"
+            log_stream_name = "$StreamPrefix/EventLog/Application"
+            event_name      = "Application"
           }
-        ]
+        )
       }
     }
   }
-  agent = {
+  agent = @{
     metrics_collection_interval = 60
-    run_as_user                 = "NT AUTHORITY\\SYSTEM"
-    debug                       = false
+    run_as_user = "NT AUTHORITY\\SYSTEM"
+    debug = $false
   }
-})}'
+}
 
-$CWPath = "C:\\ProgramData\\Amazon\\AmazonCloudWatchAgent"
-New-Item -ItemType Directory -Force -Path $CWPath | Out-Null
-$ConfigFile = "$CWPath\\config.json"
-$CWConfig | Out-File -Encoding ASCII -FilePath $ConfigFile -Force
+$CfgDir = "C:\\ProgramData\\Amazon\\AmazonCloudWatchAgent"
+$CfgPath = Join-Path $CfgDir "config.json"
+New-Item -ItemType Directory -Force -Path $CfgDir | Out-Null
+$CwConfig | ConvertTo-Json -Depth 10 | Out-File -FilePath $CfgPath -Encoding ascii -Force
 
 # ----------------------------
-# 5) Start CloudWatch Agent
+# 6) Start CloudWatch Agent with local config
 # ----------------------------
 Write-Host "Starting CloudWatch Agent..."
-& "C:\\Program Files\\Amazon\\AmazonCloudWatchAgent\\amazon-cloudwatch-agent-ctl.ps1" -a stop
-& "C:\\Program Files\\Amazon\\AmazonCloudWatchAgent\\amazon-cloudwatch-agent-ctl.ps1" -a start -m ec2 -c file:$ConfigFile
+& "C:\\Program Files\\Amazon\\AmazonCloudWatchAgent\\amazon-cloudwatch-agent-ctl.ps1" -a stop | Out-Null
+& "C:\\Program Files\\Amazon\\AmazonCloudWatchAgent\\amazon-cloudwatch-agent-ctl.ps1" -a start -m ec2 -c "file:$CfgPath"
 
-Write-Host "CloudWatch Agent installed and running."
-Write-Host "Auto-login configured for user '$Username'."
-Write-Host "SSM Agent active and connected."
+# ----------------------------
+# 7) Ensure your app service is Auto + Started
+# ----------------------------
+$svcName = "${var.app_service_name}"   # e.g., BrowserAutomationLauncher
+try {
+  if (Get-Service -Name $svcName -ErrorAction Stop) {
+    Set-Service -Name $svcName -StartupType Automatic
+    Start-Service -Name $svcName -ErrorAction SilentlyContinue
+  }
+} catch {
+  Write-Host "Service '$svcName' not found: $_"
+}
+
+Write-Host "Setup complete: Auto-login, login trigger, CloudWatch, SSM, and App service configured."
+Stop-Transcript
 </powershell>
 EOF
