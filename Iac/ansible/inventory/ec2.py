@@ -68,6 +68,15 @@ def get_instances():
         }
     }
 
+    # --- Retrieve credentials from environment (Requires _run_ansible.sh fix) ---
+    win_user = os.environ.get('TF_VAR_WINDOWS_USERNAME', 'Administrator')
+    win_pass = os.environ.get('TF_VAR_WINDOWS_PASSWORD')
+    
+    # Add a check for the password
+    if not win_pass:
+        print("Warning: TF_VAR_WINDOWS_PASSWORD is not set in environment. SSM connection will likely fail.", file=sys.stderr)
+        # We proceed, but the connection will fail if the host requires a password
+
     for reservation in reservations:
         for instance in reservation.get('Instances', []):
             iid = instance['InstanceId']
@@ -81,14 +90,21 @@ def get_instances():
                 # Configure hostvars for SSM/Windows connectivity
                 inventory['_meta']['hostvars'][iid] = {
                     'ansible_host': iid,  # with SSM we use instance ID directly
-                    # *** CORRECT FQCN FOR THE AMAZON COLLECTION PLUGIN ***
+                    # *** SSM Connection Plugin ***
                     'ansible_connection': 'amazon.aws.aws_ssm',  
-                    'ansible_aws_ssm_region': region,  # Ensure region is correct
+                    'ansible_aws_ssm_region': region,
                     'instance_name': name_tag,
-                    # --- CRUCIAL ADDITIONS FOR WINDOWS/SSM ---
+                    
+                    # --- CRITICAL: Variables needed by the SSM Plugin for internal OS authentication ---
+                    'ansible_user': win_user,
+                    'ansible_password': win_pass,
+                    
+                    # These variables are kept for Windows modules/shell execution
                     'ansible_shell_type': 'powershell',
                     'ansible_shell_executable': 'powershell.exe',
-                    'ansible_user': 'Administrator'
+                    
+                    # Ensure a sufficient timeout for SSM commands
+                    'ansible_timeout': 300 
                 }
 
     return inventory

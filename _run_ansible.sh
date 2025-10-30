@@ -44,8 +44,13 @@ python -m pip install --upgrade pip
 pip install "ansible>=9" boto3 botocore pywinrm requests-ntlm
 ansible-galaxy collection install amazon.aws community.aws ansible.windows community.windows
 
-# Load Ansible env (optional user run)
+# =======================================================
+# FIX: Load Ansible env BEFORE the wait block begins, 
+# making TF_VAR_* available to the inventory script (ec2.py) 
+# and the rest of the Ansible execution.
+# =======================================================
 if [ -f .env.ansible ]; then
+    echo "Loading Ansible environment variables..."
     set -a
     source .env.ansible
     set +a
@@ -116,7 +121,7 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
   fi
 
   # --- Waiting Message ---
-  echo "⏳ Waiting:"
+  echo "Waiting:"
   echo "  - $RUNNING_COUNT/$EXPECTED running"
   echo "  - $PUBLIC_IP_COUNT/$EXPECTED public IPs"
   echo "  - $SYSTEM_OK_COUNT/$EXPECTED system status ok (or initializing)"
@@ -150,6 +155,8 @@ sleep 180  # 3 minutes additional wait
 #########################################################
 chmod +x inventory/ec2.py
 echo "Running Ansible playbook..."
+# The inventory script will now be able to read TF_VAR_WINDOWS_USERNAME/PASSWORD
+# from the environment variables sourced above!
 ansible-inventory -i inventory/ec2.py --graph
 ansible-playbook -i inventory/ec2.py playbook.yml -vv
 

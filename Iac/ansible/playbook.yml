@@ -17,8 +17,9 @@
     # ----------------------------
     # Verify SSM connectivity
     # ----------------------------
-    - name: Ping the Windows instance to verify connectivity
-      ansible.windows.win_ping:
+    - name: Ping the Windows instance to verify connectivity (SSM Shell Check)
+      ansible.builtin.shell:
+        cmd: echo "SSM is connected and running commands"
       retries: 5
       delay: 10
       until: result is succeeded
