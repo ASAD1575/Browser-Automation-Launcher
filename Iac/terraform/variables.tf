@@ -56,3 +56,15 @@ variable "terraform_state_bucket" {
   description = "S3 bucket name for Terraform remote state"
   type        = string
 }
+
+variable "windows_password" {
+  description = "Password for the Windows user"
+  type        = string
+  sensitive   = true
+}
+
+variable "windows_username" {
+  description = "Username for the Windows user"
+  type        = string
+  default     = "Administrator"
+}

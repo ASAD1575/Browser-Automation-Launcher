@@ -76,3 +76,15 @@ variable "app_service_name" {
   type        = string
 
 }
+
+variable "windows_password" {
+  description = "Password for the Windows user"
+  type        = string
+  sensitive   = true
+}
+
+variable "windows_username" {
+  description = "Username for the Windows user"
+  type        = string
+  default     = "Administrator"
+}

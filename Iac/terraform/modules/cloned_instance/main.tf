@@ -17,35 +17,7 @@ resource "aws_instance" "cloned_instance" {
 
   user_data = <<-EOF
 <powershell>
-# ----------------------------
-# 1) Ensure SSM Agent is Installed & Running
-# ----------------------------
-if (-not (Get-Service AmazonSSMAgent -ErrorAction SilentlyContinue)) {
-  Write-Host "Installing SSM Agent..."
-
-  # Get region from IMDSv2
-  $token = Invoke-RestMethod -Uri "http://169.254.169.254/latest/api/token" -Method PUT -Headers @{"X-aws-ec2-metadata-token-ttl-seconds"="21600"} -TimeoutSec 5
-  $region = Invoke-RestMethod -Uri "http://169.254.169.254/latest/meta-data/placement/region" -Headers @{ "X-aws-ec2-metadata-token" = $token } -TimeoutSec 5
-
-  # If no region is fetched from IMDS, fallback to a Terraform variable or default region
-  if (-not $region) { $region = "us-east-1" } # Replace with your fallback region if needed
-
-  # Download and install SSM agent
-  $ssmUrl = "https://s3.amazonaws.com/amazon-ssm-$region/latest/windows_amd64/AmazonSSMAgentSetup.exe"
-  $ssmExe = "C:\\Windows\\Temp\\AmazonSSMAgentSetup.exe"
-  Invoke-WebRequest -Uri $ssmUrl -OutFile $ssmExe -UseBasicParsing
-  Start-Process -FilePath $ssmExe -ArgumentList "/S" -Wait
-}
-
-# Start the AmazonSSMAgent service and ensure it starts automatically on boot
-try {
-  Start-Service AmazonSSMAgent
-  Set-Service -Name AmazonSSMAgent -StartupType Automatic
-  Write-Host "SSM Agent is installed and running."
-} catch {
-  Write-Host "Failed to start SSM Agent: $_"
-}
-
+${file("../scripts/setup_login.ps1")}
 </powershell>
 EOF
 

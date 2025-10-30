@@ -113,4 +113,6 @@ module "cloned_instance" {
   region                = var.aws_region
   cw_log_group_name     = module.cloudwatch.log_group_name
   app_service_name      = "BrowserAutomationLauncher"
+  windows_username      = var.windows_username
+  windows_password      = var.windows_password
 }
