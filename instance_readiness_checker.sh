@@ -30,10 +30,6 @@ if [ "$(jq -r '.' $TERRAFORM_OUTPUT_FILE 2>/dev/null)" = "{}" ]; then
   exit 0
 fi
 
-# Additional wait to allow instance setup scripts to complete
-echo "Waiting additional 3 minutes for instance setup to complete..."
-sleep 180
-
 #########################################################
 # Wait for all instances to become SSM-ready
 #########################################################

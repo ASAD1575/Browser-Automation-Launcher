@@ -1,4 +1,3 @@
-user_data = <<-EOF
 <powershell>
 $ErrorActionPreference = "Stop"
 Start-Transcript -Path "C:\\ProgramData\\cloudwatch-bootstrap.log" -Append
@@ -40,7 +39,7 @@ try {
 # 2) Configure Auto-Login
 # ----------------------------
 Write-Host "Configuring Windows Auto-Login..."
-$Username = "${var.windows_username}"     # Example: ticketboat
+$Username = "${var.windows_username}"
 $PasswordPlain = "${var.windows_password}"
 $Password = $PasswordPlain | ConvertTo-SecureString -AsPlainText -Force
 $RegPath  = "HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon"
@@ -60,13 +59,16 @@ Set-ItemProperty -Path $RegPath -Name "AutoAdminLogon" -Value "1"
 Set-ItemProperty -Path $RegPath -Name "DefaultUsername" -Value $Username
 Set-ItemProperty -Path $RegPath -Name "DefaultPassword" -Value $PasswordPlain
 Set-ItemProperty -Path $RegPath -Name "DefaultDomainName" -Value $env:COMPUTERNAME
-Write-Host "Auto-login enabled for user '$Username'."
+Write-Host "✅ Auto-login enabled for user '$Username'."
 
 # ----------------------------
-# 3) Schedule Task to Trigger Auto Login After Reboot
+# 3) Schedule Task to Trigger Auto Login After Reboot (Fixed)
 # ----------------------------
+Write-Host "Creating persistent auto-login trigger task..."
+
 $TaskName = "ForceAutoLogin"
 $TaskScript = "C:\\ProgramData\\trigger_autologin.ps1"
+
 $ScriptContent = @"
 Start-Sleep -Seconds 10
 Write-Host 'Triggering auto-login session...'
@@ -75,11 +77,15 @@ rundll32.exe user32.dll, LockWorkStation
 "@
 $ScriptContent | Out-File -FilePath $TaskScript -Encoding ASCII -Force
 
-# Register scheduled task that runs immediately on startup (SYSTEM)
 $Action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -File `"$TaskScript`""
 $Trigger = New-ScheduledTaskTrigger -AtStartup
-Register-ScheduledTask -Action $Action -Trigger $Trigger -TaskName $TaskName -RunLevel Highest -User "SYSTEM" -Force
-Write-Host "Scheduled auto-login trigger task created."
+
+try {
+  Register-ScheduledTask -Action $Action -Trigger $Trigger -TaskName $TaskName -Description "Forces auto-login session at startup" -RunLevel Highest -User "SYSTEM" -Force
+  Write-Host "✅ Scheduled Task '$TaskName' successfully created under SYSTEM context."
+} catch {
+  Write-Host "⚠️ Failed to create scheduled task: $_"
+}
 
 # ----------------------------
 # 4) Install CloudWatch Agent via MSI (with retries)
@@ -179,7 +185,12 @@ try {
   Write-Host "Service '$svcName' not found: $_"
 }
 
+# ----------------------------
+# 8) Optional: Force reboot to apply auto-login
+# ----------------------------
+Write-Host "Rebooting to apply auto-login..."
+Restart-Computer -Force
+
 Write-Host "Setup complete: Auto-login, login trigger, CloudWatch, SSM, and App service configured."
 Stop-Transcript
 </powershell>
-EOF
