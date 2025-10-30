@@ -1,19 +1,10 @@
 # group_vars/windows.yml
 ansible_connection: amazon.aws.aws_ssm
 ansible_shell_type: powershell
-ansible_shell_executable: powershell.exe
+ansible_become: true
+ansible_become_method: runas
 
-# Don't escalate for the initial checks; set per-task later
-ansible_become: false
-
-# Force the correct SSM document for Windows
-ansible_aws_ssm_document_name: AWS-RunPowerShellScript
-
-# Give SSM time to execute + poll sanely
-ansible_aws_ssm_timeout: 1200           # seconds overall
-ansible_aws_ssm_poll_interval: 5        # seconds between polls
-
-# Prefer WINDOWS_* ; fallback to TF_VAR_*
+# Prefer WINDOWS_* ; fallback to TF_VAR_* ; default user Administrator
 ansible_user: >-
   {{ lookup('env','WINDOWS_USERNAME')
      | default(lookup('env','TF_VAR_WINDOWS_USERNAME'), true)
@@ -24,9 +15,5 @@ ansible_password: >-
      | default(lookup('env','TF_VAR_WINDOWS_PASSWORD'), true)
      | default('', true) }}
 
-# Only enable become when you actually need to run-as
-# (set these on the specific tasks that need it)
-# ansible_become: true
-# ansible_become_method: runas
-# ansible_become_user: "{{ ansible_user }}"
-# ansible_become_pass: "{{ ansible_password }}"
+ansible_become_user: "{{ ansible_user }}"
+ansible_become_pass: "{{ ansible_password }}"
