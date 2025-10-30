@@ -2,18 +2,18 @@
 ansible_connection: amazon.aws.aws_ssm
 ansible_shell_type: powershell
 ansible_become: true
-
-# --- CRITICAL FIX: Explicitly set connection credentials using environment lookup ---
-# This ensures that even if this file is loaded, it correctly pulls the credentials
-# that were sourced by _run_ansible.sh and expected by the SSM plugin.
-
-ansible_user: "{{ lookup('env', 'TF_VAR_WINDOWS_USERNAME') }}"
-ansible_password: "{{ lookup('env', 'TF_VAR_WINDOWS_PASSWORD') }}"
-
-# --- FIX: Set become_user and become_pass for runas become method ---
-ansible_become_user: "{{ lookup('env', 'TF_VAR_WINDOWS_USERNAME') }}"
-ansible_become_pass: "{{ lookup('env', 'TF_VAR_WINDOWS_PASSWORD') }}"
-
-# Optional, but often helpful for shell commands running as Administrator
-# ansible_become: true
 ansible_become_method: runas
+
+# Prefer WINDOWS_* ; fallback to TF_VAR_* ; default user Administrator
+ansible_user: >-
+  {{ lookup('env','WINDOWS_USERNAME')
+     | default(lookup('env','TF_VAR_WINDOWS_USERNAME'), true)
+     | default('Administrator', true) }}
+
+ansible_password: >-
+  {{ lookup('env','WINDOWS_PASSWORD')
+     | default(lookup('env','TF_VAR_WINDOWS_PASSWORD'), true)
+     | default('', true) }}
+
+ansible_become_user: "{{ ansible_user }}"
+ansible_become_pass: "{{ ansible_password }}"

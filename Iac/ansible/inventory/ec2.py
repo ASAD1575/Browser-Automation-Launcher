@@ -68,10 +68,19 @@ def get_instances():
         }
     }
 
-    # --- Retrieve credentials from environment (Requires _run_ansible.sh fix) ---
-    win_user = os.environ.get('TF_VAR_WINDOWS_USERNAME', 'Administrator')
-    win_pass = os.environ.get('TF_VAR_WINDOWS_PASSWORD')
-    
+    # --- Retrieve credentials from environment ---
+    win_user = (
+        os.environ.get('WINDOWS_USERNAME')
+        or os.environ.get('TF_VAR_WINDOWS_USERNAME')
+        or 'Administrator'
+    )
+    win_pass = (
+        os.environ.get('WINDOWS_PASSWORD')
+        or os.environ.get('TF_VAR_WINDOWS_PASSWORD')
+    )
+    if not win_pass:
+        print("Warning: WINDOWS_PASSWORD/TF_VAR_WINDOWS_PASSWORD not set; SSM login may fail.", file=sys.stderr)
+
     # Add a check for the password
     if not win_pass:
         print("Warning: TF_VAR_WINDOWS_PASSWORD is not set in environment. SSM connection will likely fail.", file=sys.stderr)
