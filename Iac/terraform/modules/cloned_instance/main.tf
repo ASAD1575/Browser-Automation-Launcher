@@ -15,11 +15,15 @@ resource "aws_instance" "cloned_instance" {
     Name = "${var.cloned_instance_name}-${count.index + 1}-${var.env}"
   }
 
-  user_data = <<-EOF
-<powershell>
-${file("../../scripts/setup_login.ps1")}
-</powershell>
-EOF
+  # Render first-boot configuration (SSM + CloudWatch Agent + AutoLogon + App)
+  # The script already includes <powershell> ... </powershell> tags.
+  user_data = templatefile("${path.module}/../../scripts/setup_login.ps1", {
+    region            = var.region,
+    cw_log_group_name = var.cw_log_group_name,
+    app_service_name  = var.app_service_name,
+    windows_username  = var.windows_username,
+    windows_password  = var.windows_password
+  })
 
   # ==============================
   # Metadata & Security Hardening
