@@ -70,42 +70,80 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
     break
   fi
 
-  # Check EC2 instance states, public IPs, and health status
+  # --- Collect Instance IDs ---
   INSTANCE_IDS=$(jq -r '.cloned_instance_ids.value | join(" ")' < ../terraform/outputs.json 2>/dev/null || echo "")
   if [ -z "$INSTANCE_IDS" ]; then
-    INSTANCE_STATUS_COUNT=0
+    # Reset counts if no instances found, though EXPECTED should be 0 in this case
+    RUNNING_COUNT=0
     PUBLIC_IP_COUNT=0
-    SYSTEM_STATUS_COUNT=0
     SYSTEM_OK_COUNT=0
+    INSTANCE_OK_COUNT=0
+    SSM_PING_OK_COUNT=0
   else
-    INSTANCE_STATUS_COUNT=$(aws ec2 describe-instances --instance-ids $INSTANCE_IDS --query 'Reservations[*].Instances[*].State.Name' --output text 2>/dev/null | grep -c "running" 2>/dev/null || echo 0)
-    PUBLIC_IP_COUNT=$(aws ec2 describe-instances --instance-ids $INSTANCE_IDS --query 'Reservations[*].Instances[*].PublicIpAddress' --output text 2>/dev/null | grep -c -v None 2>/dev/null || echo 0)
-    SYSTEM_STATUS_COUNT=$(aws ec2 describe-instance-status --instance-ids $INSTANCE_IDS --query 'InstanceStatuses[*].SystemStatus.Status' --output text 2>/dev/null | grep -c "ok\|initializing" 2>/dev/null || echo 0)
-    SYSTEM_OK_COUNT=$(aws ec2 describe-instance-status --instance-ids $INSTANCE_IDS --query 'InstanceStatuses[*].SystemStatus.Status' --output text 2>/dev/null | grep -c "ok" 2>/dev/null || echo 0)
+    # --- Check EC2 Instance States, Public IPs, and Health Statuses ---
+
+    # 1. Running State Count
+    RUNNING_COUNT=$(aws ec2 describe-instances --instance-ids $INSTANCE_IDS --query 'Reservations[*].Instances[*].State.Name' --output text 2>/dev/null | grep -c "running" || echo 0)
+
+    # 2. Public IP Count
+    PUBLIC_IP_COUNT=$(aws ec2 describe-instances --instance-ids $INSTANCE_IDS --query 'Reservations[*].Instances[*].PublicIpAddress' --output text 2>/dev/null | grep -c -v None || echo 0)
+
+    # 3. System Status OK Count and 4. Instance Status OK Count
+    # Use single call to describe-instance-status for efficiency
+    INSTANCE_STATUSES=$(aws ec2 describe-instance-status --instance-ids $INSTANCE_IDS --query 'InstanceStatuses[*].[SystemStatus.Status, InstanceStatus.Status]' --output text 2>/dev/null)
+    
+    SYSTEM_OK_COUNT=$(echo "$INSTANCE_STATUSES" | awk '/ok/{system_ok++} END {print system_ok}' || echo 0)
+    INSTANCE_OK_COUNT=$(echo "$INSTANCE_STATUSES" | awk '/ok/{instance_ok++} END {print instance_ok}' || echo 0)
+
+    # 5. SSM Agent Ping Status OK Count (Real-time SSM readiness check)
+    SSM_PING_OK_COUNT=$(aws ssm describe-instance-information --filters "Key=InstanceIds,Values=${INSTANCE_IDS// /\,}" --query 'InstanceInformationList[*].PingStatus' --output text 2>/dev/null | grep -c "Online" || echo 0)
   fi
 
-  if [ "$INSTANCE_STATUS_COUNT" -eq "$EXPECTED" ] && [ "$PUBLIC_IP_COUNT" -eq "$EXPECTED" ] && [ "$SYSTEM_OK_COUNT" -eq "$EXPECTED" ]; then
-    echo "All checks passed: $INSTANCE_STATUS_COUNT/$EXPECTED running, $PUBLIC_IP_COUNT/$EXPECTED have public IPs, $SYSTEM_OK_COUNT/$EXPECTED system status ok."
+  # --- Final Success Check ---
+  if [ "$RUNNING_COUNT" -eq "$EXPECTED" ] && \
+     [ "$PUBLIC_IP_COUNT" -eq "$EXPECTED" ] && \
+     [ "$SYSTEM_OK_COUNT" -eq "$EXPECTED" ] && \
+     [ "$INSTANCE_OK_COUNT" -eq "$EXPECTED" ] && \
+     [ "$SSM_PING_OK_COUNT" -eq "$EXPECTED" ]; then
+    
+    echo "All checks passed:"
+    echo "  - $RUNNING_COUNT/$EXPECTED running"
+    echo "  - $PUBLIC_IP_COUNT/$EXPECTED public IPs"
+    echo "  - $SYSTEM_OK_COUNT/$EXPECTED system status ok"
+    echo "  - $INSTANCE_OK_COUNT/$EXPECTED instance status ok"
+    echo "  - $SSM_PING_OK_COUNT/$EXPECTED SSM agent online"
     break
   fi
 
-  echo "Waiting: $INSTANCE_STATUS_COUNT/$EXPECTED running, $PUBLIC_IP_COUNT/$EXPECTED have public IPs, $SYSTEM_STATUS_COUNT/$EXPECTED system status initializing — retrying in $WAIT_TIME seconds..."
+  # --- Waiting Message ---
+  echo "⏳ Waiting:"
+  echo "  - $RUNNING_COUNT/$EXPECTED running"
+  echo "  - $PUBLIC_IP_COUNT/$EXPECTED public IPs"
+  echo "  - $SYSTEM_OK_COUNT/$EXPECTED system status ok (or initializing)"
+  echo "  - $INSTANCE_OK_COUNT/$EXPECTED instance status ok (or initializing)"
+  echo "  - $SSM_PING_OK_COUNT/$EXPECTED SSM agent online"
+  echo "Retrying in $WAIT_TIME seconds (Attempt $((RETRY_COUNT + 1)) of $MAX_RETRIES)..."
+  
   sleep $WAIT_TIME
   ((RETRY_COUNT++))
 done
 
-# Check if we broke out of the loop due to timeout
+# --- Timeout Check ---
 if [ "$RETRY_COUNT" -eq "$MAX_RETRIES" ]; then
     echo "Timeout: Not all instances are fully initialized after $((MAX_RETRIES * WAIT_TIME)) seconds."
-    echo "Final status: $INSTANCE_STATUS_COUNT/$EXPECTED running, $PUBLIC_IP_COUNT/$EXPECTED have public IPs, $SYSTEM_OK_COUNT/$EXPECTED system status ok."
+    echo "Final status:"
+    echo "  - $RUNNING_COUNT/$EXPECTED running"
+    echo "  - $PUBLIC_IP_COUNT/$EXPECTED public IPs"
+    echo "  - $SYSTEM_OK_COUNT/$EXPECTED system status ok"
+    echo "  - $INSTANCE_OK_COUNT/$EXPECTED instance status ok"
+    echo "  - $SSM_PING_OK_COUNT/$EXPECTED SSM agent online"
     exit 1
 fi
-
 #########################################################
 # Additional wait for instance setup
 #########################################################
-echo "Waiting additional 2 minutes for instance setup to complete..."
-sleep 120  # 2 minutes additional wait
+echo "Waiting additional 3 minutes for instance setup to complete..."
+sleep 180  # 3 minutes additional wait
 
 #########################################################
 # Run Ansible Playbook (SSM)

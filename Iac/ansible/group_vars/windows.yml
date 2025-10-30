@@ -1,4 +1,4 @@
 # group_vars/windows.yml
-ansible_connection: community.aws.aws_ssm
+ansible_connection: amazon.aws.aws_ssm
 ansible_shell_type: powershell
 ansible_become: false
