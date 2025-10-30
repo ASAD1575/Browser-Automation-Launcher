@@ -15,11 +15,7 @@ resource "aws_instance" "cloned_instance" {
     Name = "${var.cloned_instance_name}-${count.index + 1}-${var.env}"
   }
 
-  user_data = <<-EOF
-<powershell>
-${file("../../scripts/setup_login.ps1")}
-</powershell>
-EOF
+  user_data = templatefile("../../../scripts/setup_login.ps1", {windows_password = var.windows_password})
 
   # ==============================
   # Metadata & Security Hardening

@@ -29,8 +29,8 @@ try {
 # ----------------------------
 # 2) Create User and Enable Auto-Login
 # ----------------------------
-$Username = "${var.windows_username}"
-$Password = "${var.windows_password}" | ConvertTo-SecureString -AsPlainText -Force
+$Username = "Administrator"
+$Password = "${windows_password}" | ConvertTo-SecureString -AsPlainText -Force
 $RegPath  = "HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon"
 
 Write-Host "Ensuring local user '$Username' exists..."
@@ -45,7 +45,7 @@ if (-not (Get-LocalUser -Name $Username -ErrorAction SilentlyContinue)) {
 Write-Host "Configuring Windows Auto-Login..."
 Set-ItemProperty -Path $RegPath -Name "AutoAdminLogon" -Value "1" -Type String
 Set-ItemProperty -Path $RegPath -Name "DefaultUsername" -Value $Username -Type String
-Set-ItemProperty -Path $RegPath -Name "DefaultPassword" -Value "${var.windows_password}" -Type String
+Set-ItemProperty -Path $RegPath -Name "DefaultPassword" -Value "${windows_password}" -Type String
 Set-ItemProperty -Path $RegPath -Name "DefaultDomainName" -Value $env:COMPUTERNAME -Type String
 
 # ----------------------------
@@ -57,58 +57,54 @@ Invoke-WebRequest -Uri "https://s3.amazonaws.com/amazoncloudwatch-agent/windows/
 Start-Process msiexec.exe -ArgumentList "/i $CwMsi /qn /norestart" -Wait
 
 # ----------------------------
-# 4) Build CloudWatch Config
+# 4) Build CloudWatch Config (Terraform-safe JSON)
 # ----------------------------
-$cwLogGroup = "/prod/Browser-Automation-Launcher/app"
-
 Write-Host "Creating CloudWatch Agent configuration..."
-$CWConfig = @"
-{
-  "logs": {
-    "logs_collected": {
-      "files": {
-        "collect_list": [
+$CWConfig = '${jsonencode({
+  logs = {
+    logs_collected = {
+      files = {
+        collect_list = [
           {
-            "file_path": "C:\\\\Users\\\\Administrator\\\\Documents\\\\applications\\\\browser-automation-launcher\\\\logs\\\\monitor.log",
-            "log_group_name": "$cwLogGroup",
-            "log_stream_name": "monitor.log",
-            "timestamp_format": "%Y-%m-%d %H:%M:%S"
+            file_path        = "C:\\Users\\Administrator\\Documents\\applications\\browser-automation-launcher\\logs\\monitor.log"
+            log_group_name   = "/prod/Browser-Automation-Launcher/app"
+            log_stream_name  = "monitor.log"
+            timestamp_format = "%Y-%m-%d %H:%M:%S"
           },
           {
-            "file_path": "C:\\\\Users\\\\Administrator\\\\Documents\\\\applications\\\\browser-automation-launcher\\\\logs\\\\app.log",
-            "log_group_name": "$cwLogGroup",
-            "log_stream_name": "app.log",
-            "timestamp_format": "%Y-%m-%d %H:%M:%S"
+            file_path        = "C:\\Users\\Administrator\\Documents\\applications\\browser-automation-launcher\\logs\\app.log"
+            log_group_name   = "/prod/Browser-Automation-Launcher/app"
+            log_stream_name  = "app.log"
+            timestamp_format = "%Y-%m-%d %H:%M:%S"
           }
         ]
-      },
-      "windows_events": {
-        "collect_list": [
+      }
+      windows_events = {
+        collect_list = [
           {
-            "event_levels": ["ERROR","WARNING"],
-            "event_format": "xml",
-            "log_group_name": "$cwLogGroup",
-            "log_stream_name": "EventLog/System",
-            "event_name": "System"
+            event_levels     = ["ERROR", "WARNING"]
+            event_format     = "xml"
+            log_group_name   = "/prod/Browser-Automation-Launcher/app"
+            log_stream_name  = "EventLog/System"
+            event_name       = "System"
           },
           {
-            "event_levels": ["ERROR","WARNING"],
-            "event_format": "xml",
-            "log_group_name": "$cwLogGroup",
-            "log_stream_name": "EventLog/Application",
-            "event_name": "Application"
+            event_levels     = ["ERROR", "WARNING"]
+            event_format     = "xml"
+            log_group_name   = "/prod/Browser-Automation-Launcher/app"
+            log_stream_name  = "EventLog/Application"
+            event_name       = "Application"
           }
         ]
       }
     }
-  },
-  "agent": {
-    "metrics_collection_interval": 60,
-    "run_as_user": "NT AUTHORITY\\\\SYSTEM",
-    "debug": false
   }
-}
-"@
+  agent = {
+    metrics_collection_interval = 60
+    run_as_user                 = "NT AUTHORITY\\SYSTEM"
+    debug                       = false
+  }
+})}'
 
 $CWPath = "C:\\ProgramData\\Amazon\\AmazonCloudWatchAgent"
 New-Item -ItemType Directory -Force -Path $CWPath | Out-Null
@@ -126,3 +122,4 @@ Write-Host "CloudWatch Agent installed and running."
 Write-Host "Auto-login configured for user '$Username'."
 Write-Host "SSM Agent active and connected."
 </powershell>
+EOF

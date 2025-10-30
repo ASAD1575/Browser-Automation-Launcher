@@ -193,53 +193,53 @@ jobs:
           name: prod-terraform-outputs
           path: Iac/terraform/tf_output.json
 
-  # ansible-configuration:
-  #   runs-on: ubuntu-latest
-  #   needs: [deploy-dev, deploy-staging, deploy-production]
-  #   # Using 'always()' ensures the condition is evaluated even if dependencies are skipped.
-  #   if: always() && (needs.deploy-dev.result == 'success' || needs.deploy-staging.result == 'success' || needs.deploy-production.result == 'success')
-  #   permissions:
-  #     id-token: write
-  #     contents: read
-  #   steps:
-  #     - name: Checkout code
-  #       uses: actions/checkout@v3
+  check-instance-readiness:
+    runs-on: ubuntu-latest
+    needs: [deploy-dev, deploy-staging, deploy-production]
+    # Using 'always()' ensures the condition is evaluated even if dependencies are skipped.
+    if: always() && (needs.deploy-dev.result == 'success' || needs.deploy-staging.result == 'success' || needs.deploy-production.result == 'success')
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-  #     - name: Set Output Artifact Name
-  #       id: set_artifact_name
-  #       run: |
-  #         if [ "${{ needs.deploy-dev.result }}" == "success" ]; then
-  #           echo "artifact_name=dev-terraform-outputs" >> $GITHUB_OUTPUT
-  #         elif [ "${{ needs.deploy-staging.result }}" == "success" ]; then
-  #           echo "artifact_name=staging-terraform-outputs" >> $GITHUB_OUTPUT
-  #         elif [ "${{ needs.deploy-production.result }}" == "success" ]; then
-  #           echo "artifact_name=prod-terraform-outputs" >> $GITHUB_OUTPUT
-  #         else
-  #           echo "artifact_name=none" >> $GITHUB_OUTPUT
-  #         fi
+      - name: Set Output Artifact Name
+        id: set_artifact_name
+        run: |
+          if [ "${{ needs.deploy-dev.result }}" == "success" ]; then
+            echo "artifact_name=dev-terraform-outputs" >> $GITHUB_OUTPUT
+          elif [ "${{ needs.deploy-staging.result }}" == "success" ]; then
+            echo "artifact_name=staging-terraform-outputs" >> $GITHUB_OUTPUT
+          elif [ "${{ needs.deploy-production.result }}" == "success" ]; then
+            echo "artifact_name=prod-terraform-outputs" >> $GITHUB_OUTPUT
+          else
+            echo "artifact_name=none" >> $GITHUB_OUTPUT
+          fi
 
-  #     - name: Download Terraform Outputs Artifact
-  #       uses: actions/download-artifact@v4
-  #       with:
-  #         name: ${{ steps.set_artifact_name.outputs.artifact_name }}
-  #         path: Iac/terraform/
+      - name: Download Terraform Outputs Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ steps.set_artifact_name.outputs.artifact_name }}
+          path: Iac/terraform/
 
-  #     - name: Configure AWS credentials
-  #       uses: aws-actions/configure-aws-credentials@v3
-  #       with:
-  #         role-to-assume: arn:aws:iam::375299695019:role/GitHubActionsTerraformRole
-  #         aws-region: us-east-1
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          role-to-assume: arn:aws:iam::375299695019:role/GitHubActionsTerraformRole
+          aws-region: us-east-1
 
-  #       # Set the environment variables from GitHub secrets or variables
-  #     - name: Set Environment Variables
-  #       run: |
-  #         echo "TF_VAR_WINDOWS_USERNAME=${{ secrets.WINDOWS_USERNAME }}" >> .env.ansible
-  #         echo "TF_VAR_WINDOWS_PASSWORD=${{ secrets.WINDOWS_PASSWORD }}" >> .env.ansible
+        # Set the environment variables from GitHub secrets or variables
+      - name: Set Environment Variables
+        run: |
+          echo "TF_VAR_WINDOWS_USERNAME=${{ secrets.WINDOWS_USERNAME }}" >> .env.ansible
+          echo "TF_VAR_WINDOWS_PASSWORD=${{ secrets.WINDOWS_PASSWORD }}" >> .env.ansible
       
-  #     - name: Install AWS Session Manager Plugin
-  #       uses: ankurk91/install-session-manager-plugin-action@v1
+      - name: Install AWS Session Manager Plugin
+        uses: ankurk91/install-session-manager-plugin-action@v1
 
-  #     - name: Run Ansible Configuration
-  #       run: |
-  #         chmod +x ./_run_ansible.sh
-  #         ./_run_ansible.sh
+      - name: Check Instance Readiness
+        run: |
+          chmod +x ./instance_readiness_checker.sh
+          ./instance_readiness_checker.sh
