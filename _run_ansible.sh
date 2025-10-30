@@ -49,10 +49,10 @@ ansible-galaxy collection install amazon.aws community.aws ansible.windows commu
 # making TF_VAR_* available to the inventory script (ec2.py) 
 # and the rest of the Ansible execution.
 # =======================================================
-if [ -f .env.ansible ]; then
+if [ -f ../.env.ansible ]; then
     echo "Loading Ansible environment variables..."
     set -a
-    source .env.ansible
+    source ../.env.ansible
     set +a
 fi
 
