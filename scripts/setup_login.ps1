@@ -70,6 +70,25 @@ Set-ItemProperty -Path $RegPath -Name 'DefaultPassword' -Type String -Value $Pas
 Set-ItemProperty -Path $RegPath -Name 'DefaultDomainName' -Type String -Value $env:COMPUTERNAME
 Write-Host "Auto-login enabled for user '$Username'."
 
+# Prevent console session timeout and screen lock (keeps autologon session active for Chrome GUI)
+try {
+  $policyPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Control Panel\Desktop'
+  if (-not (Test-Path $policyPath)) {
+    New-Item -Path $policyPath -Force | Out-Null
+  }
+  Set-ItemProperty -Path $policyPath -Name 'ScreenSaveActive' -Type String -Value '0' -ErrorAction SilentlyContinue | Out-Null
+  Set-ItemProperty -Path $policyPath -Name 'ScreenSaverIsSecure' -Type String -Value '0' -ErrorAction SilentlyContinue | Out-Null
+  
+  $rdpTcpPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp'
+  if (-not (Test-Path $rdpTcpPath)) {
+    New-Item -Path $rdpTcpPath -Force | Out-Null
+  }
+  Set-ItemProperty -Path $rdpTcpPath -Name 'MaxDisconnectionTime' -Type DWord -Value 0 -ErrorAction SilentlyContinue | Out-Null
+  Set-ItemProperty -Path $rdpTcpPath -Name 'MaxIdleTime' -Type DWord -Value 0 -ErrorAction SilentlyContinue | Out-Null
+} catch {
+  # Non-critical
+}
+
 # ----------------------------
 # 2.1) Allow blank-password autologon and remove blockers
 # ----------------------------
@@ -125,87 +144,185 @@ try {
 # ----------------------------
 # 4) Install CloudWatch Agent via MSI (with retries)
 # ----------------------------
+Write-Host "Installing CloudWatch Agent..."
 $msiUrl  = "https://s3.amazonaws.com/amazoncloudwatch-agent/windows/amd64/latest/amazon-cloudwatch-agent.msi"
 $msiPath = "C:\\Windows\\Temp\\amazon-cloudwatch-agent.msi"
 $retries = 5
+$installSuccess = $false
+
 for ($i=0; $i -lt $retries; $i++) {
   try {
-    Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath -UseBasicParsing
-    Start-Process msiexec.exe -ArgumentList @("/i",$msiPath,"/qn","/norestart") -Wait
-    break
+    Write-Host "  Attempt $($i+1)/$retries: Downloading CloudWatch Agent MSI..."
+    Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath -UseBasicParsing -ErrorAction Stop
+    Write-Host "  Installing CloudWatch Agent..."
+    $installProcess = Start-Process msiexec.exe -ArgumentList @("/i",$msiPath,"/qn","/norestart") -Wait -PassThru -NoNewWindow
+    if ($installProcess.ExitCode -eq 0) {
+      $installSuccess = $true
+      Write-Host "  [OK] CloudWatch Agent installed successfully."
+      break
+    } else {
+      Write-Host "  [WARNING] Install exit code: $($installProcess.ExitCode)"
+      if ($i -eq ($retries-1)) {
+        throw "CloudWatch Agent installation failed with exit code: $($installProcess.ExitCode)"
+      }
+    }
   } catch {
+    Write-Host "  [ERROR] Attempt $($i+1) failed: $_"
+    if ($i -eq ($retries-1)) {
+      Write-Host "  [CRITICAL] CloudWatch Agent installation failed after $retries attempts."
+      throw
+    }
     Start-Sleep -Seconds 10
-    if ($i -eq ($retries-1)) { throw }
+  }
+}
+
+# Verify CloudWatch Agent is installed
+if ($installSuccess) {
+  $cwAgentPath = "C:\\Program Files\\Amazon\\AmazonCloudWatchAgent\\amazon-cloudwatch-agent.exe"
+  if (Test-Path $cwAgentPath) {
+    Write-Host "  [VERIFIED] CloudWatch Agent executable found."
+  } else {
+    Write-Host "  [WARNING] CloudWatch Agent executable not found at expected path."
   }
 }
 
 # ----------------------------
 # 5) Build CW Agent config with {InstanceID}/{InstanceName}
 # ----------------------------
-$token = Get-IMDSToken
-$InstanceId = Get-IMDS "meta-data/instance-id" $token
-$InstanceName = $null
-try { $InstanceName = Get-IMDS "meta-data/tags/instance/Name" $token } catch { $InstanceName = $null }
-if (-not $InstanceName) { $InstanceName = "UnknownName" }
-$StreamPrefix = "$InstanceId/$InstanceName"
-
-$CwConfig = @{
-  logs = @{
-    logs_collected = @{
-      files = @{
-        collect_list = @(
-          @{
-            file_path       = "C:\\Users\\Administrator\\Documents\\applications\\browser-automation-launcher\\logs\\monitor.log"
-            log_group_name  = "${var.cw_log_group_name}"
-            log_stream_name = "$StreamPrefix/monitor.log"
-            timestamp_format= "%Y-%m-%d %H:%M:%S"
-          },
-          @{
-            file_path       = "C:\\Users\\Administrator\\Documents\\applications\\browser-automation-launcher\\logs\\app.log"
-            log_group_name  = "${var.cw_log_group_name}"
-            log_stream_name = "$StreamPrefix/app.log"
-            timestamp_format= "%Y-%m-%d %H:%M:%S"
-          }
-        )
-      }
-      windows_events = @{
-        collect_list = @(
-          @{
-            event_levels    = @("ERROR","WARNING")
-            event_format    = "xml"
-            log_group_name  = "${var.cw_log_group_name}"
-            log_stream_name = "$StreamPrefix/EventLog/System"
-            event_name      = "System"
-          },
-          @{
-            event_levels    = @("ERROR","WARNING")
-            event_format    = "xml"
-            log_group_name  = "${var.cw_log_group_name}"
-            log_stream_name = "$StreamPrefix/EventLog/Application"
-            event_name      = "Application"
-          }
-        )
-      }
-    }
-  }
-  agent = @{
-    metrics_collection_interval = 60
-    run_as_user = "NT AUTHORITY\\SYSTEM"
-    debug = $false
-  }
-}
-
+Write-Host "Configuring CloudWatch Agent..."
 $CfgDir = "C:\\ProgramData\\Amazon\\AmazonCloudWatchAgent"
 $CfgPath = Join-Path $CfgDir "config.json"
-New-Item -ItemType Directory -Force -Path $CfgDir | Out-Null
-$CwConfig | ConvertTo-Json -Depth 10 | Out-File -FilePath $CfgPath -Encoding ascii -Force
+try {
+  $token = Get-IMDSToken
+  $InstanceId = Get-IMDS "meta-data/instance-id" $token
+  $InstanceName = $null
+  try { $InstanceName = Get-IMDS "meta-data/tags/instance/Name" $token } catch { $InstanceName = $null }
+  if (-not $InstanceName) { $InstanceName = "UnknownName" }
+  $StreamPrefix = "$InstanceId/$InstanceName"
+  Write-Host "  Instance ID: $InstanceId"
+  Write-Host "  Instance Name: $InstanceName"
+  Write-Host "  Stream Prefix: $StreamPrefix"
+
+  # Use dynamic username instead of hardcoded "Administrator"
+  $UserProfilePath = Join-Path "C:\Users" $Username
+  $LogBasePath = Join-Path $UserProfilePath "Documents\Applications\browser-automation-launcher\logs"
+  $MonitorLogPath = Join-Path $LogBasePath "monitor.log"
+  $AppLogPath = Join-Path $LogBasePath "app.log"
+  
+  Write-Host "  Application log directory: $LogBasePath"
+  Write-Host "    Monitor log: $MonitorLogPath"
+  Write-Host "    App log: $AppLogPath"
+
+  # Create log directory if it doesn't exist
+  if (-not (Test-Path $LogBasePath)) {
+    Write-Host "  Creating log directory: $LogBasePath"
+    New-Item -ItemType Directory -Force -Path $LogBasePath | Out-Null
+  }
+
+  $CwConfig = @{
+    logs = @{
+      logs_collected = @{
+        files = @{
+          collect_list = @(
+            @{
+              file_path       = $MonitorLogPath
+              log_group_name  = "${var.cw_log_group_name}"
+              log_stream_name = "$StreamPrefix/monitor.log"
+              timestamp_format= "%Y-%m-%d %H:%M:%S"
+            },
+            @{
+              file_path       = $AppLogPath
+              log_group_name  = "${var.cw_log_group_name}"
+              log_stream_name = "$StreamPrefix/app.log"
+              timestamp_format= "%Y-%m-%d %H:%M:%S"
+            }
+          )
+        }
+        windows_events = @{
+          collect_list = @(
+            @{
+              event_levels    = @("ERROR","WARNING")
+              event_format    = "xml"
+              log_group_name  = "${var.cw_log_group_name}"
+              log_stream_name = "$StreamPrefix/EventLog/System"
+              event_name      = "System"
+            },
+            @{
+              event_levels    = @("ERROR","WARNING")
+              event_format    = "xml"
+              log_group_name  = "${var.cw_log_group_name}"
+              log_stream_name = "$StreamPrefix/EventLog/Application"
+              event_name      = "Application"
+            }
+          )
+        }
+      }
+    }
+    agent = @{
+      metrics_collection_interval = 60
+      run_as_user = "NT AUTHORITY\\SYSTEM"
+      debug = $false
+    }
+  }
+
+  New-Item -ItemType Directory -Force -Path $CfgDir | Out-Null
+  $CwConfig | ConvertTo-Json -Depth 10 | Out-File -FilePath $CfgPath -Encoding ascii -Force
+  Write-Host "  [OK] CloudWatch Agent configuration saved to: $CfgPath"
+} catch {
+  Write-Host "  [ERROR] Failed to configure CloudWatch Agent: $_"
+  Write-Host "  Stack trace: $($_.ScriptStackTrace)"
+}
 
 # ----------------------------
 # 6) Start CloudWatch Agent with local config
 # ----------------------------
 Write-Host "Starting CloudWatch Agent..."
-& "C:\\Program Files\\Amazon\\AmazonCloudWatchAgent\\amazon-cloudwatch-agent-ctl.ps1" -a stop | Out-Null
-& "C:\\Program Files\\Amazon\\AmazonCloudWatchAgent\\amazon-cloudwatch-agent-ctl.ps1" -a start -m ec2 -c "file:$CfgPath"
+try {
+  # Verify config file was created
+  if (-not (Test-Path $CfgPath)) {
+    Write-Host "  [ERROR] CloudWatch Agent configuration file not found: $CfgPath"
+    Write-Host "  Cannot start CloudWatch Agent without configuration."
+    throw "CloudWatch Agent configuration file missing"
+  }
+  
+  $cwCtlPath = "C:\\Program Files\\Amazon\\AmazonCloudWatchAgent\\amazon-cloudwatch-agent-ctl.ps1"
+  
+  if (-not (Test-Path $cwCtlPath)) {
+    Write-Host "  [ERROR] CloudWatch Agent control script not found: $cwCtlPath"
+    Write-Host "  CloudWatch Agent may not have installed correctly."
+  } else {
+    Write-Host "  Stopping existing CloudWatch Agent (if running)..."
+    & $cwCtlPath -a stop | Out-Null
+    
+    Write-Host "  Starting CloudWatch Agent with configuration file: $CfgPath"
+    $startResult = & $cwCtlPath -a start -m ec2 -c "file:$CfgPath" 2>&1
+    
+    if ($LASTEXITCODE -eq 0) {
+      Write-Host "  [OK] CloudWatch Agent started successfully."
+    } else {
+      Write-Host "  [WARNING] CloudWatch Agent start returned exit code: $LASTEXITCODE"
+      Write-Host "  Output: $startResult"
+    }
+    
+    # Verify agent is running
+    Start-Sleep -Seconds 2
+    $cwService = Get-Service -Name "AmazonCloudWatchAgent" -ErrorAction SilentlyContinue
+    if ($cwService) {
+      if ($cwService.Status -eq 'Running') {
+        Write-Host "  [VERIFIED] CloudWatch Agent service is running."
+      } else {
+        Write-Host "  [WARNING] CloudWatch Agent service status: $($cwService.Status)"
+        Write-Host "  Attempting to start service..."
+        Start-Service -Name "AmazonCloudWatchAgent" -ErrorAction SilentlyContinue
+      }
+    } else {
+      Write-Host "  [WARNING] CloudWatch Agent service not found."
+    }
+  }
+} catch {
+  Write-Host "  [ERROR] Failed to start CloudWatch Agent: $_"
+  Write-Host "  Stack trace: $($_.ScriptStackTrace)"
+}
 
 # ----------------------------
 # 7) Ensure your app service is Auto + Started
@@ -231,22 +348,57 @@ try {
   $UserProfilePath = Join-Path "C:\Users" $UserNameForTask
   $StartupScript = Join-Path $UserProfilePath "Documents\Applications\browser-automation-launcher\scripts\simple_startup.ps1"
 
+  Write-Host "Configuring scheduled task '$LogonTaskName' for user $UserNameForTask..."
+  Write-Host "  Expected script path: $StartupScript"
+
+  # Check if user profile exists
+  if (-not (Test-Path $UserProfilePath)) {
+    Write-Host "  [WARNING] User profile path does not exist yet: $UserProfilePath"
+    Write-Host "  The profile will be created when the user first logs on via autologon."
+  }
+
+  # Check if startup script exists
   if (-not (Test-Path $StartupScript)) {
-    Write-Host "Startup script not found for user $UserNameForTask: $StartupScript"
+    Write-Host "  [WARNING] Startup script not found: $StartupScript"
+    Write-Host "  The script should exist before autologon triggers the task."
+    Write-Host "  Ensure the application is installed in the user's profile."
+  } else {
+    Write-Host "  [OK] Startup script found."
   }
 
   # Remove any existing task
-  try { Unregister-ScheduledTask -TaskName $LogonTaskName -Confirm:$false -ErrorAction SilentlyContinue } catch {}
+  try { 
+    Unregister-ScheduledTask -TaskName $LogonTaskName -Confirm:$false -ErrorAction SilentlyContinue 
+    Write-Host "  Removed any existing task with same name."
+  } catch {}
 
+  # Create the scheduled task
   $action    = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -File `"$StartupScript`""
   $trigger   = New-ScheduledTaskTrigger -AtLogOn -User $UserNameForTask
   # Match manual test script: use Interactive desktop logon type
   $principal = New-ScheduledTaskPrincipal -UserId $UserNameForTask -LogonType Interactive -RunLevel Highest
 
   Register-ScheduledTask -TaskName $LogonTaskName -Action $action -Trigger $trigger -Principal $principal -Force | Out-Null
-  Write-Host "Logon scheduled task '$LogonTaskName' created for user $UserNameForTask"
+  Write-Host "  [OK] Scheduled task '$LogonTaskName' registered successfully."
+
+  # Verify task was created
+  try {
+    $createdTask = Get-ScheduledTask -TaskName $LogonTaskName -ErrorAction Stop
+    Write-Host "  [VERIFIED] Task exists with state: $($createdTask.State)"
+    Write-Host "  Task will trigger automatically when user '$UserNameForTask' logs on via autologon (after reboot)."
+    
+    # Show task details
+    $taskInfo = Get-ScheduledTaskInfo -TaskName $LogonTaskName -ErrorAction SilentlyContinue
+    if ($taskInfo) {
+      Write-Host "  Last run: $($taskInfo.LastRunTime)"
+      Write-Host "  Last result: $($taskInfo.LastTaskResult)"
+    }
+  } catch {
+    Write-Host "  [ERROR] Could not verify task creation: $_"
+  }
 } catch {
-  Write-Host "Failed to create logon scheduled task: $_"
+  Write-Host "[ERROR] Failed to create logon scheduled task: $_"
+  Write-Host "  Stack trace: $($_.ScriptStackTrace)"
 }
 
 # ----------------------------
@@ -294,11 +446,82 @@ try {
 }
 
 # ----------------------------
-# 8) Optional: Force reboot to apply auto-login
+# 8) Verify Autologon Configuration Before Reboot
+# ----------------------------
+Write-Host ""
+Write-Host "=========================================="
+Write-Host "Pre-Reboot Verification"
+Write-Host "=========================================="
+
+# Verify autologon is configured
+$winlogonPath = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
+try {
+  $autoAdminLogon = (Get-ItemProperty -Path $winlogonPath -Name 'AutoAdminLogon' -ErrorAction SilentlyContinue).AutoAdminLogon
+  $defaultUser = (Get-ItemProperty -Path $winlogonPath -Name 'DefaultUserName' -ErrorAction SilentlyContinue).DefaultUserName
+  
+  if ($autoAdminLogon -eq '1' -and $defaultUser -eq "$Username") {
+    Write-Host "[OK] Autologon is configured for user: $defaultUser"
+  } else {
+    Write-Host "[WARNING] Autologon may not be properly configured:"
+    Write-Host "  AutoAdminLogon: $autoAdminLogon"
+    Write-Host "  DefaultUserName: $defaultUser"
+  }
+} catch {
+  Write-Host "[WARNING] Could not verify autologon configuration: $_"
+}
+
+# Verify scheduled task exists
+try {
+  $task = Get-ScheduledTask -TaskName "BrowserAutomationStartup" -ErrorAction Stop
+  Write-Host "[OK] Scheduled task 'BrowserAutomationStartup' exists with state: $($task.State)"
+  Write-Host "  Note: Task will remain in 'Ready' state until user logs on via autologon."
+  Write-Host "  After reboot and autologon, the task should automatically trigger and change to 'Running'."
+} catch {
+  Write-Host "[ERROR] Scheduled task 'BrowserAutomationStartup' not found!"
+}
+
+# Verify CloudWatch Agent is installed and configured
+try {
+  $cwService = Get-Service -Name "AmazonCloudWatchAgent" -ErrorAction SilentlyContinue
+  if ($cwService) {
+    Write-Host "[OK] CloudWatch Agent service found with status: $($cwService.Status)"
+  } else {
+    Write-Host "[WARNING] CloudWatch Agent service not found."
+  }
+  
+  if (Test-Path $CfgPath) {
+    Write-Host "[OK] CloudWatch Agent configuration file exists: $CfgPath"
+  } else {
+    Write-Host "[ERROR] CloudWatch Agent configuration file not found: $CfgPath"
+  }
+} catch {
+  Write-Host "[WARNING] Could not verify CloudWatch Agent: $_"
+}
+
+Write-Host ""
+Write-Host "=========================================="
+Write-Host "Post-Reboot Expected Behavior"
+Write-Host "=========================================="
+Write-Host "1. System will reboot"
+Write-Host "2. Autologon will log in user '$Username' automatically"
+Write-Host "3. Scheduled task 'BrowserAutomationStartup' will trigger automatically"
+Write-Host "4. Application will start via simple_startup.ps1"
+Write-Host ""
+Write-Host "To verify after reboot (via SSM):"
+Write-Host "  schtasks /query /tn BrowserAutomationStartup /fo LIST"
+Write-Host "  # Should show Status: Running (after autologon completes)"
+Write-Host ""
+Write-Host "If task remains in 'Ready' state after reboot:"
+Write-Host "  1. Check autologon worked: verify user is logged in"
+Write-Host "  2. Check task history: Event Viewer -> Task Scheduler"
+Write-Host "  3. Manually trigger: schtasks /run /tn BrowserAutomationStartup"
+Write-Host ""
+
+# ----------------------------
+# 9) Force reboot to apply auto-login
 # ----------------------------
 Write-Host "Rebooting to apply auto-login and RDP configuration..."
-Restart-Computer -Force
-
 Write-Host "Setup complete: Auto-login, login trigger, CloudWatch, SSM, and App service configured."
 Stop-Transcript
+Restart-Computer -Force
 </powershell>

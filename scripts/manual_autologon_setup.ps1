@@ -1,19 +1,20 @@
-# Safe AutoLogon + Interactive Logon Task Setup (for GUI Chrome)
+# Safe AutoLogon Setup (for GUI Chrome)
 # Run as Administrator on your EC2 instance once.
 #
 # IMPORTANT: This script does NOT change existing user passwords.
-# - If user exists: Preserves existing password, only configures autologon and scheduled task
+# IMPORTANT: This script does NOT create scheduled tasks - it only triggers existing ones.
+# - If user exists: Preserves existing password, only configures autologon
 # - If user doesn't exist: Creates user with provided password
 # - To update autologon password: Use -UpdateAutologonPassword flag after manually changing password
+# - To trigger existing task: Use -RunTaskNow flag (default: true)
 
 param(
   [string]$Username = "Administrator",
   [string]$TaskName = "BrowserAutomationStartup",
-  [string]$TaskScript = "$env:USERPROFILE\Documents\Applications\browser-automation-launcher\scripts\simple_startup.ps1",
   [string]$Password = "",               # Optional: Only used if creating new user or UpdateAutologonPassword is true
   [switch]$UpdateAutologonPassword = $false,  # Set to $true to update autologon registry password
   [switch]$MakeUserAdmin = $true,
-  [switch]$RunTaskNow = $true,
+  [switch]$RunTaskNow = $true,          # Trigger existing scheduled task immediately
   [switch]$RebootWhenDone = $false
 )
 
@@ -86,6 +87,31 @@ Set-ItemProperty -Path $reg -Name 'DisableCAD' -Type DWord -Value 1
 Set-ItemProperty -Path $reg -Name 'DefaultUserName' -Type String -Value $Username
 Set-ItemProperty -Path $reg -Name 'DefaultPassword' -Type String -Value $autologonPassword
 Set-ItemProperty -Path $reg -Name 'DefaultDomainName' -Type String -Value $env:COMPUTERNAME
+
+# Prevent console session timeout and screen lock (keeps autologon session active for Chrome GUI)
+try {
+  # Disable screen saver via system-wide policy (applies to all users)
+  $policyPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Control Panel\Desktop'
+  if (-not (Test-Path $policyPath)) {
+    New-Item -Path $policyPath -Force | Out-Null
+  }
+  Set-ItemProperty -Path $policyPath -Name 'ScreenSaveActive' -Type String -Value '0' -ErrorAction SilentlyContinue | Out-Null
+  Set-ItemProperty -Path $policyPath -Name 'ScreenSaverIsSecure' -Type String -Value '0' -ErrorAction SilentlyContinue | Out-Null
+  
+  # Disable session timeout (prevents RDP session disconnection)
+  $rdpTcpPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp'
+  if (-not (Test-Path $rdpTcpPath)) {
+    New-Item -Path $rdpTcpPath -Force | Out-Null
+  }
+  Set-ItemProperty -Path $rdpTcpPath -Name 'MaxDisconnectionTime' -Type DWord -Value 0 -ErrorAction SilentlyContinue | Out-Null
+  Set-ItemProperty -Path $rdpTcpPath -Name 'MaxIdleTime' -Type DWord -Value 0 -ErrorAction SilentlyContinue | Out-Null
+  
+  Write-Host "[OK] Configured session to stay active (no screen lock/timeout)"
+} catch {
+  # Non-critical, ignore errors
+  Write-Host "Note: Some session timeout settings could not be configured: $_"
+}
+
 Write-Host "[OK] AutoLogin configured for user '$Username'"
 if ([string]::IsNullOrEmpty($autologonPassword)) {
   Write-Host "  [WARNING] Autologon password is empty. Autologon may not work on reboot."
@@ -134,30 +160,54 @@ try {
   Write-Host "You may need to manually enable RDP via: sysdm.cpl -> Remote tab -> Enable Remote Desktop"
 }
 
-# --- Verify Task Script Exists ---
-if (-not (Test-Path $TaskScript)) {
-  throw "Task script not found: $TaskScript"
+# --- Verify Scheduled Task Exists ---
+Write-Host "Checking for existing scheduled task '$TaskName'..."
+$taskExists = $false
+try {
+  $existingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+  if ($existingTask) {
+    $taskExists = $true
+    Write-Host "[OK] Scheduled task '$TaskName' already exists."
+    Write-Host "  Task path: $($existingTask.TaskPath)"
+    Write-Host "  Task state: $($existingTask.State)"
+  }
+} catch {
+  # Task doesn't exist
 }
 
-# --- Create Scheduled Task for GUI Chrome ---
-Write-Host "Creating interactive logon task '$TaskName' for $Username..."
-try { Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue } catch {}
+if (-not $taskExists) {
+  Write-Host "[WARNING] Scheduled task '$TaskName' not found."
+  Write-Host "  The task should already exist (created during AMI setup or manually)."
+  Write-Host "  If missing, create it manually or use a different script to set it up."
+}
 
-$action    = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-ExecutionPolicy Bypass -File `"$TaskScript`""
-$trigger   = New-ScheduledTaskTrigger -AtLogOn -User $Username
-$principal = New-ScheduledTaskPrincipal -UserId $Username -LogonType Interactive -RunLevel Highest
-Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Force | Out-Null
-Write-Host "Interactive logon task created successfully."
-
-# --- Optionally Run Task Now ---
+# --- Optionally Run Existing Task Now ---
 if ($RunTaskNow) {
-  try {
-    schtasks /run /tn "$TaskName" | Out-Null
-    Write-Host "Task '$TaskName' triggered manually."
-  } catch { Write-Host "Could not trigger task now: $_" }
+  if ($taskExists) {
+    Write-Host ""
+    Write-Host "Triggering existing scheduled task '$TaskName'..."
+    try {
+      $result = schtasks /run /tn "$TaskName" 2>&1
+      if ($LASTEXITCODE -eq 0) {
+        Write-Host "[OK] Task '$TaskName' triggered successfully."
+      } else {
+        Write-Host "[WARNING] Task trigger may have failed. Output: $result"
+      }
+    } catch { 
+      Write-Host "[ERROR] Could not trigger task: $_"
+    }
+  } else {
+    Write-Host "[SKIP] Task '$TaskName' not found. Cannot trigger."
+  }
 }
 
-Write-Host "Setup complete: AutoLogin + Chrome interactive startup ready."
+Write-Host ""
+Write-Host "Setup complete: AutoLogin configured."
+if ($taskExists) {
+  Write-Host "  Scheduled task '$TaskName' exists and can be triggered manually or via autologon."
+} else {
+  Write-Host "  [NOTE] Scheduled task '$TaskName' was not found. Ensure it exists for autologon to start the app."
+}
 
 # --- Final RDP Verification ---
 Write-Host ""
