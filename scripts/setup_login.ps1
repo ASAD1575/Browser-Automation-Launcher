@@ -250,9 +250,53 @@ try {
 }
 
 # ----------------------------
+# 7.2) Enable and Configure RDP for Remote Access
+# ----------------------------
+Write-Host "Checking RDP configuration..."
+try {
+  # Check if RDP is already enabled
+  $rdpEnabled = (Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server' -Name 'fDenyTSConnections' -ErrorAction SilentlyContinue).fDenyTSConnections
+  
+  if ($rdpEnabled -eq 0) {
+    Write-Host "RDP is already enabled. Skipping RDP configuration."
+  } else {
+    Write-Host "RDP is disabled. Enabling RDP..."
+    
+    # Enable RDP service
+    Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server' -Name 'fDenyTSConnections' -Type DWord -Value 0 -Force | Out-Null
+    
+    # Enable RDP through Windows Firewall
+    Enable-NetFirewallRule -DisplayGroup 'Remote Desktop' -ErrorAction SilentlyContinue | Out-Null
+    
+    # Set RDP authentication level (0 = Allow connections from computers running any version of Remote Desktop)
+    $rdpTcpPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp'
+    if (-not (Test-Path $rdpTcpPath)) {
+      New-Item -Path $rdpTcpPath -Force | Out-Null
+    }
+    Set-ItemProperty -Path $rdpTcpPath -Name 'UserAuthentication' -Type DWord -Value 0 -Force | Out-Null
+    
+    # Ensure Remote Desktop Service is running
+    $rdpService = Get-Service -Name 'TermService' -ErrorAction SilentlyContinue
+    if ($rdpService) {
+      Set-Service -Name 'TermService' -StartupType Automatic -ErrorAction SilentlyContinue
+      if ($rdpService.Status -ne 'Running') {
+        Start-Service -Name 'TermService' -ErrorAction SilentlyContinue
+        Write-Host "RDP service started."
+      } else {
+        Write-Host "RDP service already running."
+      }
+    }
+    
+    Write-Host "RDP configured and enabled. Port 3389 should be accessible via Security Group."
+  }
+} catch {
+  Write-Host "Warning: Could not fully configure RDP: $_"
+}
+
+# ----------------------------
 # 8) Optional: Force reboot to apply auto-login
 # ----------------------------
-Write-Host "Rebooting to apply auto-login..."
+Write-Host "Rebooting to apply auto-login and RDP configuration..."
 Restart-Computer -Force
 
 Write-Host "Setup complete: Auto-login, login trigger, CloudWatch, SSM, and App service configured."
