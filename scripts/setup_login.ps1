@@ -445,77 +445,77 @@ try {
   Write-Host "Warning: Could not fully configure RDP: $_"
 }
 
-# ----------------------------
-# 8) Verify Autologon Configuration Before Reboot
-# ----------------------------
-Write-Host ""
-Write-Host "=========================================="
-Write-Host "Pre-Reboot Verification"
-Write-Host "=========================================="
+# # ----------------------------
+# # 8) Verify Autologon Configuration Before Reboot
+# # ----------------------------
+# Write-Host ""
+# Write-Host "=========================================="
+# Write-Host "Pre-Reboot Verification"
+# Write-Host "=========================================="
 
-# Verify autologon is configured
-$winlogonPath = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
-try {
-  $autoAdminLogon = (Get-ItemProperty -Path $winlogonPath -Name 'AutoAdminLogon' -ErrorAction SilentlyContinue).AutoAdminLogon
-  $defaultUser = (Get-ItemProperty -Path $winlogonPath -Name 'DefaultUserName' -ErrorAction SilentlyContinue).DefaultUserName
+# # Verify autologon is configured
+# $winlogonPath = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
+# try {
+#   $autoAdminLogon = (Get-ItemProperty -Path $winlogonPath -Name 'AutoAdminLogon' -ErrorAction SilentlyContinue).AutoAdminLogon
+#   $defaultUser = (Get-ItemProperty -Path $winlogonPath -Name 'DefaultUserName' -ErrorAction SilentlyContinue).DefaultUserName
   
-  if ($autoAdminLogon -eq '1' -and $defaultUser -eq "$Username") {
-    Write-Host "[OK] Autologon is configured for user: $defaultUser"
-  } else {
-    Write-Host "[WARNING] Autologon may not be properly configured:"
-    Write-Host "  AutoAdminLogon: $autoAdminLogon"
-    Write-Host "  DefaultUserName: $defaultUser"
-  }
-} catch {
-  Write-Host "[WARNING] Could not verify autologon configuration: $_"
-}
+#   if ($autoAdminLogon -eq '1' -and $defaultUser -eq "$Username") {
+#     Write-Host "[OK] Autologon is configured for user: $defaultUser"
+#   } else {
+#     Write-Host "[WARNING] Autologon may not be properly configured:"
+#     Write-Host "  AutoAdminLogon: $autoAdminLogon"
+#     Write-Host "  DefaultUserName: $defaultUser"
+#   }
+# } catch {
+#   Write-Host "[WARNING] Could not verify autologon configuration: $_"
+# }
 
-# Verify scheduled task exists
-try {
-  $task = Get-ScheduledTask -TaskName "BrowserAutomationStartup" -ErrorAction Stop
-  Write-Host "[OK] Scheduled task 'BrowserAutomationStartup' exists with state: $($task.State)"
-  Write-Host "  Note: Task will remain in 'Ready' state until user logs on via autologon."
-  Write-Host "  After reboot and autologon, the task should automatically trigger and change to 'Running'."
-} catch {
-  Write-Host "[ERROR] Scheduled task 'BrowserAutomationStartup' not found!"
-}
+# # Verify scheduled task exists
+# try {
+#   $task = Get-ScheduledTask -TaskName "BrowserAutomationStartup" -ErrorAction Stop
+#   Write-Host "[OK] Scheduled task 'BrowserAutomationStartup' exists with state: $($task.State)"
+#   Write-Host "  Note: Task will remain in 'Ready' state until user logs on via autologon."
+#   Write-Host "  After reboot and autologon, the task should automatically trigger and change to 'Running'."
+# } catch {
+#   Write-Host "[ERROR] Scheduled task 'BrowserAutomationStartup' not found!"
+# }
 
-# Verify CloudWatch Agent is installed and configured
-try {
-  $cwService = Get-Service -Name "AmazonCloudWatchAgent" -ErrorAction SilentlyContinue
-  if ($cwService) {
-    Write-Host "[OK] CloudWatch Agent service found with status: $($cwService.Status)"
-  } else {
-    Write-Host "[WARNING] CloudWatch Agent service not found."
-  }
+# # Verify CloudWatch Agent is installed and configured
+# try {
+#   $cwService = Get-Service -Name "AmazonCloudWatchAgent" -ErrorAction SilentlyContinue
+#   if ($cwService) {
+#     Write-Host "[OK] CloudWatch Agent service found with status: $($cwService.Status)"
+#   } else {
+#     Write-Host "[WARNING] CloudWatch Agent service not found."
+#   }
   
-  if (Test-Path $CfgPath) {
-    Write-Host "[OK] CloudWatch Agent configuration file exists: $CfgPath"
-  } else {
-    Write-Host "[ERROR] CloudWatch Agent configuration file not found: $CfgPath"
-  }
-} catch {
-  Write-Host "[WARNING] Could not verify CloudWatch Agent: $_"
-}
+#   if (Test-Path $CfgPath) {
+#     Write-Host "[OK] CloudWatch Agent configuration file exists: $CfgPath"
+#   } else {
+#     Write-Host "[ERROR] CloudWatch Agent configuration file not found: $CfgPath"
+#   }
+# } catch {
+#   Write-Host "[WARNING] Could not verify CloudWatch Agent: $_"
+# }
 
-Write-Host ""
-Write-Host "=========================================="
-Write-Host "Post-Reboot Expected Behavior"
-Write-Host "=========================================="
-Write-Host "1. System will reboot"
-Write-Host "2. Autologon will log in user '$Username' automatically"
-Write-Host "3. Scheduled task 'BrowserAutomationStartup' will trigger automatically"
-Write-Host "4. Application will start via simple_startup.ps1"
-Write-Host ""
-Write-Host "To verify after reboot (via SSM):"
-Write-Host "  schtasks /query /tn BrowserAutomationStartup /fo LIST"
-Write-Host "  # Should show Status: Running (after autologon completes)"
-Write-Host ""
-Write-Host "If task remains in 'Ready' state after reboot:"
-Write-Host "  1. Check autologon worked: verify user is logged in"
-Write-Host "  2. Check task history: Event Viewer -> Task Scheduler"
-Write-Host "  3. Manually trigger: schtasks /run /tn BrowserAutomationStartup"
-Write-Host ""
+# Write-Host ""
+# Write-Host "=========================================="
+# Write-Host "Post-Reboot Expected Behavior"
+# Write-Host "=========================================="
+# Write-Host "1. System will reboot"
+# Write-Host "2. Autologon will log in user '$Username' automatically"
+# Write-Host "3. Scheduled task 'BrowserAutomationStartup' will trigger automatically"
+# Write-Host "4. Application will start via simple_startup.ps1"
+# Write-Host ""
+# Write-Host "To verify after reboot (via SSM):"
+# Write-Host "  schtasks /query /tn BrowserAutomationStartup /fo LIST"
+# Write-Host "  # Should show Status: Running (after autologon completes)"
+# Write-Host ""
+# Write-Host "If task remains in 'Ready' state after reboot:"
+# Write-Host "  1. Check autologon worked: verify user is logged in"
+# Write-Host "  2. Check task history: Event Viewer -> Task Scheduler"
+# Write-Host "  3. Manually trigger: schtasks /run /tn BrowserAutomationStartup"
+# Write-Host ""
 
 # ----------------------------
 # 9) Force reboot to apply auto-login
