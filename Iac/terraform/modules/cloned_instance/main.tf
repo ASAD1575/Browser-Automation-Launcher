@@ -2,15 +2,6 @@
 # EC2 Clone Module — Launch from Custom AMI
 # ==========================================================
 
-data "aws_ami" "source_ami" {
-  provider    = aws
-  most_recent = true
-  filter {
-    name   = "image-id"
-    values = [var.ami_id]
-  }
-}
-
 resource "aws_instance" "cloned_instance" {
   count                       = var.cloned_instance_count
   ami                         = var.ami_id # custom AMI: ami-0d418d3b14bf1782f
