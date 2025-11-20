@@ -1,189 +1,189 @@
-name: Staging Deployment
+# name: Staging Deployment
 
-on:
-  push:
-    branches:
-      - staging
-  workflow_dispatch:
-    inputs:
-      command_to_run:
-        description: 'PowerShell script to execute on each Windows instance (semicolon-separated commands)'
-        required: false
-        default: |
-          cd C:\Users\ticketboat\Documents\Applications\browser-automation-launcher; New-Item -ItemType File -Path "C:\Users\ticketboat\Documents\Applications\browser-automation-launcher\logs\STOP" -Force; Stop-Process -Name python -Force -ErrorAction SilentlyContinue; git pull origin staging; schtasks /run /tn "BrowserAutomationStartup"
+# on:
+#   push:
+#     branches:
+#       - staging
+#   workflow_dispatch:
+#     inputs:
+#       command_to_run:
+#         description: 'PowerShell script to execute on each Windows instance (semicolon-separated commands)'
+#         required: false
+#         default: |
+#           cd C:\Users\ticketboat\Documents\Applications\browser-automation-launcher; New-Item -ItemType File -Path "C:\Users\ticketboat\Documents\Applications\browser-automation-launcher\logs\STOP" -Force; Stop-Process -Name python -Force -ErrorAction SilentlyContinue; git pull origin staging; schtasks /run /tn "BrowserAutomationStartup"
 
-jobs:
-  deploy-staging:
-    # Allow both push events and manual workflow dispatch
-    if: |
-      (github.event_name == 'push' && github.ref == 'refs/heads/staging') ||
-      github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      id-token: write
-      contents: read
+# jobs:
+#   deploy-staging:
+#     # Allow both push events and manual workflow dispatch
+#     if: |
+#       (github.event_name == 'push' && github.ref == 'refs/heads/staging') ||
+#       github.event_name == 'workflow_dispatch'
+#     runs-on: ubuntu-latest
+#     timeout-minutes: 15
+#     permissions:
+#       id-token: write
+#       contents: read
     
-    env:
-      # Use GitHub variable or fallback to default names
-      INSTANCE_NAMES: "${{ vars.STAGING_INSTANCE_NAMES || 'Browser Automation Launcher-2' }}"
+#     env:
+#       # Use GitHub variable or fallback to default names
+#       INSTANCE_NAMES: "${{ vars.STAGING_INSTANCE_NAMES || 'Browser Automation Launcher-2' }}"
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v3
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v3
-        with:
-          role-to-assume: arn:aws:iam::375299695019:role/GitHubActionsTerraformRole
-          aws-region: us-east-1
+#       - name: Configure AWS credentials
+#         uses: aws-actions/configure-aws-credentials@v3
+#         with:
+#           role-to-assume: arn:aws:iam::375299695019:role/GitHubActionsTerraformRole
+#           aws-region: us-east-1
 
-      - name: Install jq (for JSON parsing)
-        run: sudo apt-get update && sudo apt-get install -y jq
+#       - name: Install jq (for JSON parsing)
+#         run: sudo apt-get update && sudo apt-get install -y jq
         
-      - name: Lookup Instance IDs by Name
-        id: instance_lookup
-        run: |
-          # Convert comma-separated names into a filter string suitable for the AWS CLI
-          NAMES_ARRAY=$(echo "$INSTANCE_NAMES" | tr ',' ' ')
-          echo "Targeting names: $NAMES_ARRAY"
+#       - name: Lookup Instance IDs by Name
+#         id: instance_lookup
+#         run: |
+#           # Convert comma-separated names into a filter string suitable for the AWS CLI
+#           NAMES_ARRAY=$(echo "$INSTANCE_NAMES" | tr ',' ' ')
+#           echo "Targeting names: $NAMES_ARRAY"
           
-          # Use describe-instances to filter by the 'Name' tag and output only the Instance IDs
-          INSTANCE_IDS=$(aws ec2 describe-instances \
-            --filters "Name=tag:Name,Values=${NAMES_ARRAY}" "Name=instance-state-name,Values=running" \
-            --query 'Reservations[].Instances[].InstanceId' \
-            --output json | jq -r '.[]')
+#           # Use describe-instances to filter by the 'Name' tag and output only the Instance IDs
+#           INSTANCE_IDS=$(aws ec2 describe-instances \
+#             --filters "Name=tag:Name,Values=${NAMES_ARRAY}" "Name=instance-state-name,Values=running" \
+#             --query 'Reservations[].Instances[].InstanceId' \
+#             --output json | jq -r '.[]')
             
-          if [ -z "$INSTANCE_IDS" ]; then
-            echo "::error::No running instances found with the names specified: $INSTANCE_NAMES"
-            exit 1
-          fi
+#           if [ -z "$INSTANCE_IDS" ]; then
+#             echo "::error::No running instances found with the names specified: $INSTANCE_NAMES"
+#             exit 1
+#           fi
           
-          # Store the found IDs as a JSON array string for the next step to consume
-          JSON_IDS=$(echo "$INSTANCE_IDS" | jq -R . | jq -s .)
+#           # Store the found IDs as a JSON array string for the next step to consume
+#           JSON_IDS=$(echo "$INSTANCE_IDS" | jq -R . | jq -s .)
           
-          echo "Found Instance IDs: $JSON_IDS"
-          echo "instance_ids=$JSON_IDS" >> $GITHUB_OUTPUT
+#           echo "Found Instance IDs: $JSON_IDS"
+#           echo "instance_ids=$JSON_IDS" >> $GITHUB_OUTPUT
 
-      - name: Verify SSM Connectivity
-        run: |
-          echo "Verifying SSM connectivity for all instances..."
-          for INSTANCE_ID in $(echo ${{ steps.instance_lookup.outputs.instance_ids }} | jq -r '.[]'); do
-            STATUS=$(aws ssm describe-instance-information \
-              --filters "Key=InstanceIds,Values=$INSTANCE_ID" \
-              --query 'InstanceInformationList[0].PingStatus' \
-              --output text 2>/dev/null || echo "Unknown")
+#       - name: Verify SSM Connectivity
+#         run: |
+#           echo "Verifying SSM connectivity for all instances..."
+#           for INSTANCE_ID in $(echo ${{ steps.instance_lookup.outputs.instance_ids }} | jq -r '.[]'); do
+#             STATUS=$(aws ssm describe-instance-information \
+#               --filters "Key=InstanceIds,Values=$INSTANCE_ID" \
+#               --query 'InstanceInformationList[0].PingStatus' \
+#               --output text 2>/dev/null || echo "Unknown")
             
-            if [ "$STATUS" != "Online" ]; then
-              echo "::warning::Instance $INSTANCE_ID is not SSM-ready (status: $STATUS)"
-            else
-              echo "✓ Instance $INSTANCE_ID is SSM-ready"
-            fi
-          done
+#             if [ "$STATUS" != "Online" ]; then
+#               echo "::warning::Instance $INSTANCE_ID is not SSM-ready (status: $STATUS)"
+#             else
+#               echo "✓ Instance $INSTANCE_ID is SSM-ready"
+#             fi
+#           done
         
-      - name: Execute Command on All Found Instances (PowerShell Script)
-        id: execute_command
-        run: |
-          # Determine command to run: use input if provided, otherwise use default
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ -n "${{ github.event.inputs.command_to_run }}" ]; then
-            COMMAND_SCRIPT="${{ github.event.inputs.command_to_run }}"
-          else
-            # Default command for push events
-            COMMAND_SCRIPT='cd C:\Users\ticketboat\Documents\Applications\browser-automation-launcher; New-Item -ItemType File -Path "C:\Users\ticketboat\Documents\Applications\browser-automation-launcher\logs\STOP" -Force; Stop-Process -Name python -Force -ErrorAction SilentlyContinue; git pull origin staging; schtasks /run /tn "BrowserAutomationStartup"'
-          fi
+#       - name: Execute Command on All Found Instances (PowerShell Script)
+#         id: execute_command
+#         run: |
+#           # Determine command to run: use input if provided, otherwise use default
+#           if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ -n "${{ github.event.inputs.command_to_run }}" ]; then
+#             COMMAND_SCRIPT="${{ github.event.inputs.command_to_run }}"
+#           else
+#             # Default command for push events
+#             COMMAND_SCRIPT='cd C:\Users\ticketboat\Documents\Applications\browser-automation-launcher; New-Item -ItemType File -Path "C:\Users\ticketboat\Documents\Applications\browser-automation-launcher\logs\STOP" -Force; Stop-Process -Name python -Force -ErrorAction SilentlyContinue; git pull origin staging; schtasks /run /tn "BrowserAutomationStartup"'
+#           fi
           
-          echo "Executing script on instances:"
-          echo "$COMMAND_SCRIPT"
+#           echo "Executing script on instances:"
+#           echo "$COMMAND_SCRIPT"
           
-          # Convert command to JSON array format for SSM
-          # Split by semicolon and create JSON array
-          COMMAND_JSON=$(echo "$COMMAND_SCRIPT" | jq -R -s 'split(";") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))')
+#           # Convert command to JSON array format for SSM
+#           # Split by semicolon and create JSON array
+#           COMMAND_JSON=$(echo "$COMMAND_SCRIPT" | jq -R -s 'split(";") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))')
           
-          # Get instance IDs as comma-separated list
-          INSTANCE_IDS_CSV=$(echo ${{ steps.instance_lookup.outputs.instance_ids }} | jq -r '. | join(",")')
+#           # Get instance IDs as comma-separated list
+#           INSTANCE_IDS_CSV=$(echo ${{ steps.instance_lookup.outputs.instance_ids }} | jq -r '. | join(",")')
           
-          # Run the command using AWS-RunPowerShellScript document
-          COMMAND_ID=$(aws ssm send-command \
-            --instance-ids "$INSTANCE_IDS_CSV" \
-            --document-name "AWS-RunPowerShellScript" \
-            --parameters "{\"commands\":$COMMAND_JSON}" \
-            --output text --query 'Command.CommandId' 2>&1)
+#           # Run the command using AWS-RunPowerShellScript document
+#           COMMAND_ID=$(aws ssm send-command \
+#             --instance-ids "$INSTANCE_IDS_CSV" \
+#             --document-name "AWS-RunPowerShellScript" \
+#             --parameters "{\"commands\":$COMMAND_JSON}" \
+#             --output text --query 'Command.CommandId' 2>&1)
           
-          if [ -z "$COMMAND_ID" ] || echo "$COMMAND_ID" | grep -q "error"; then
-            echo "::error::Failed to send SSM command: $COMMAND_ID"
-            exit 1
-          fi
+#           if [ -z "$COMMAND_ID" ] || echo "$COMMAND_ID" | grep -q "error"; then
+#             echo "::error::Failed to send SSM command: $COMMAND_ID"
+#             exit 1
+#           fi
           
-          echo "SSM Command ID: $COMMAND_ID"
-          echo "command_id=$COMMAND_ID" >> $GITHUB_OUTPUT
+#           echo "SSM Command ID: $COMMAND_ID"
+#           echo "command_id=$COMMAND_ID" >> $GITHUB_OUTPUT
 
-      - name: Wait for Command Completion
-        run: |
-          COMMAND_ID="${{ steps.execute_command.outputs.command_id }}"
+#       - name: Wait for Command Completion
+#         run: |
+#           COMMAND_ID="${{ steps.execute_command.outputs.command_id }}"
           
-          echo "Waiting for command execution to complete on all instances..."
-          for INSTANCE_ID in $(echo ${{ steps.instance_lookup.outputs.instance_ids }} | jq -r '.[]'); do
-            echo "Waiting for instance $INSTANCE_ID..."
-            if ! aws ssm wait command-executed \
-              --command-id "$COMMAND_ID" \
-              --instance-id "$INSTANCE_ID" \
-              --max-attempts 30 \
-              --delay 10; then
-              echo "::warning::Timeout waiting for instance $INSTANCE_ID"
-            fi
-          done
+#           echo "Waiting for command execution to complete on all instances..."
+#           for INSTANCE_ID in $(echo ${{ steps.instance_lookup.outputs.instance_ids }} | jq -r '.[]'); do
+#             echo "Waiting for instance $INSTANCE_ID..."
+#             if ! aws ssm wait command-executed \
+#               --command-id "$COMMAND_ID" \
+#               --instance-id "$INSTANCE_ID" \
+#               --max-attempts 30 \
+#               --delay 10; then
+#               echo "::warning::Timeout waiting for instance $INSTANCE_ID"
+#             fi
+#           done
 
-      - name: Check Command Status and Display Output
-        run: |
-          COMMAND_ID="${{ steps.execute_command.outputs.command_id }}"
-          FAILED_INSTANCES=0
+#       - name: Check Command Status and Display Output
+#         run: |
+#           COMMAND_ID="${{ steps.execute_command.outputs.command_id }}"
+#           FAILED_INSTANCES=0
           
-          echo "Checking command status for all instances..."
-          for INSTANCE_ID in $(echo ${{ steps.instance_lookup.outputs.instance_ids }} | jq -r '.[]'); do
-            STATUS=$(aws ssm get-command-invocation \
-              --command-id "$COMMAND_ID" \
-              --instance-id "$INSTANCE_ID" \
-              --query 'Status' \
-              --output text 2>/dev/null || echo "Unknown")
+#           echo "Checking command status for all instances..."
+#           for INSTANCE_ID in $(echo ${{ steps.instance_lookup.outputs.instance_ids }} | jq -r '.[]'); do
+#             STATUS=$(aws ssm get-command-invocation \
+#               --command-id "$COMMAND_ID" \
+#               --instance-id "$INSTANCE_ID" \
+#               --query 'Status' \
+#               --output text 2>/dev/null || echo "Unknown")
             
-            echo ""
-            echo "=========================================="
-            echo "Instance: $INSTANCE_ID"
-            echo "Status: $STATUS"
-            echo "=========================================="
+#             echo ""
+#             echo "=========================================="
+#             echo "Instance: $INSTANCE_ID"
+#             echo "Status: $STATUS"
+#             echo "=========================================="
             
-            if [ "$STATUS" = "Success" ]; then
-              echo "--- Standard Output ---"
-              aws ssm get-command-invocation \
-                --command-id "$COMMAND_ID" \
-                --instance-id "$INSTANCE_ID" \
-                --query 'StandardOutputContent' \
-                --output text || echo "(No output)"
-            else
-              echo "::error::Command failed on instance $INSTANCE_ID with status: $STATUS"
-              FAILED_INSTANCES=$((FAILED_INSTANCES + 1))
+#             if [ "$STATUS" = "Success" ]; then
+#               echo "--- Standard Output ---"
+#               aws ssm get-command-invocation \
+#                 --command-id "$COMMAND_ID" \
+#                 --instance-id "$INSTANCE_ID" \
+#                 --query 'StandardOutputContent' \
+#                 --output text || echo "(No output)"
+#             else
+#               echo "::error::Command failed on instance $INSTANCE_ID with status: $STATUS"
+#               FAILED_INSTANCES=$((FAILED_INSTANCES + 1))
               
-              echo "--- Standard Output ---"
-              aws ssm get-command-invocation \
-                --command-id "$COMMAND_ID" \
-                --instance-id "$INSTANCE_ID" \
-                --query 'StandardOutputContent' \
-                --output text || echo "(No output)"
+#               echo "--- Standard Output ---"
+#               aws ssm get-command-invocation \
+#                 --command-id "$COMMAND_ID" \
+#                 --instance-id "$INSTANCE_ID" \
+#                 --query 'StandardOutputContent' \
+#                 --output text || echo "(No output)"
               
-              echo "--- Standard Error ---"
-              aws ssm get-command-invocation \
-                --command-id "$COMMAND_ID" \
-                --instance-id "$INSTANCE_ID" \
-                --query 'StandardErrorContent' \
-                --output text || echo "(No error output)"
-            fi
-            echo ""
-          done
+#               echo "--- Standard Error ---"
+#               aws ssm get-command-invocation \
+#                 --command-id "$COMMAND_ID" \
+#                 --instance-id "$INSTANCE_ID" \
+#                 --query 'StandardErrorContent' \
+#                 --output text || echo "(No error output)"
+#             fi
+#             echo ""
+#           done
           
-          if [ $FAILED_INSTANCES -gt 0 ]; then
-            echo "::error::Command failed on $FAILED_INSTANCES instance(s)"
-            exit 1
-          else
-            echo "✓ Command completed successfully on all instances"
-          fi
+#           if [ $FAILED_INSTANCES -gt 0 ]; then
+#             echo "::error::Command failed on $FAILED_INSTANCES instance(s)"
+#             exit 1
+#           else
+#             echo "✓ Command completed successfully on all instances"
+#           fi
 

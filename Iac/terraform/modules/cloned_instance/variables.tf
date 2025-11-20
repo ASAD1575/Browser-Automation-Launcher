@@ -37,7 +37,7 @@ variable "key_name" {
 
 # The IAM role for SSM connection 
 variable "iam_instance_profile" {
-  description = "Define iam role"
+  description = "IAM instance profile name (must exist in AWS)"
   type        = string
 }
 
