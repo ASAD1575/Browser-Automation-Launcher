@@ -9,9 +9,6 @@ data "aws_ami" "source_ami" {
     name   = "image-id"
     values = [var.ami_id]
   }
-
-  # Ensure the AMI is owned by the account running the workflow
-  owners = ["self", var.ami_owner_id] # Assuming var.ami_owner_id is the account ID that owns the AMI
 }
 
 resource "aws_instance" "cloned_instance" {
