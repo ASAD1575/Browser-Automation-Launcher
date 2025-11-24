@@ -317,13 +317,30 @@ jobs:
               --instance-id "$INSTANCE_ID" \
               --output json 2>/dev/null)
             
-            if [ -z "$INVOCATION" ] || echo "$INVOCATION" | grep -q "error\|Error"; then
+            # Check if we got a response
+            if [ -z "$INVOCATION" ]; then
               echo ""
               echo "=========================================="
               echo "Instance: $INSTANCE_ID"
               echo "Status: Error retrieving invocation"
               echo "=========================================="
-              echo "Could not retrieve command invocation details"
+              echo "Could not retrieve command invocation details (empty response)"
+              FAILED_INSTANCES=$((FAILED_INSTANCES + 1))
+              echo ""
+              continue
+            fi
+            
+            # Check if this is an AWS API error response (has __type field)
+            if echo "$INVOCATION" | jq -e '.__type' > /dev/null 2>&1; then
+              ERROR_TYPE=$(echo "$INVOCATION" | jq -r '.__type // "Unknown"')
+              ERROR_MSG=$(echo "$INVOCATION" | jq -r '.message // .Message // "Unknown error"')
+              echo ""
+              echo "=========================================="
+              echo "Instance: $INSTANCE_ID"
+              echo "Status: Error retrieving invocation"
+              echo "=========================================="
+              echo "AWS API Error: $ERROR_TYPE"
+              echo "Error Message: $ERROR_MSG"
               FAILED_INSTANCES=$((FAILED_INSTANCES + 1))
               echo ""
               continue
