@@ -69,6 +69,14 @@ jobs:
           export APP_IDENT_WITHOUT_ENV="${{ vars.APP_IDENT_WITHOUT_ENV }}"
           export TF_VAR_WINDOWS_USERNAME="${{ secrets.WINDOWS_USERNAME }}"
           export TF_VAR_WINDOWS_PASSWORD="${{ secrets.WINDOWS_PASSWORD }}"
+
+          echo "DEBUG: EC2_SECURITY_GROUP=$EC2_SECURITY_GROUP"
+          echo "DEBUG: EXISTING_IAM_ROLE_NAME=$EXISTING_IAM_ROLE_NAME"
+          echo "DEBUG: CUSTOM_AMI_ID=$CUSTOM_AMI_ID"
+          echo "DEBUG: CLONED_INSTANCE_TYPE=$CLONED_INSTANCE_TYPE"
+          echo "DEBUG: CLONE_INSTANCE_NAME=$CLONE_INSTANCE_NAME"
+          echo "DEBUG: ENVIRONMENT=$ENVIRONMENT"
+
           ENVIRONMENT=dev ./deploy.sh
       
       - name: Capture Terraform Outputs
@@ -124,6 +132,14 @@ jobs:
           export APP_IDENT_WITHOUT_ENV="${{ vars.APP_IDENT_WITHOUT_ENV }}"
           export TF_VAR_WINDOWS_USERNAME="${{ secrets.WINDOWS_USERNAME }}"
           export TF_VAR_WINDOWS_PASSWORD="${{ secrets.WINDOWS_PASSWORD }}"
+
+          echo "DEBUG: EC2_SECURITY_GROUP=$EC2_SECURITY_GROUP"
+          echo "DEBUG: EXISTING_IAM_ROLE_NAME=$EXISTING_IAM_ROLE_NAME"
+          echo "DEBUG: CUSTOM_AMI_ID=$CUSTOM_AMI_ID"
+          echo "DEBUG: CLONED_INSTANCE_TYPE=$CLONED_INSTANCE_TYPE"
+          echo "DEBUG: CLONE_INSTANCE_NAME=$CLONE_INSTANCE_NAME"
+          echo "DEBUG: ENVIRONMENT=$ENVIRONMENT"
+
           ENVIRONMENT=staging ./deploy.sh
 
       - name: Capture Terraform Outputs
@@ -177,6 +193,14 @@ jobs:
           export APP_IDENT_WITHOUT_ENV="${{ vars.APP_IDENT_WITHOUT_ENV }}"
           export TF_VAR_WINDOWS_USERNAME="${{ secrets.WINDOWS_USERNAME }}"
           export TF_VAR_WINDOWS_PASSWORD="${{ secrets.WINDOWS_PASSWORD }}"
+
+          echo "DEBUG: EC2_SECURITY_GROUP=$EC2_SECURITY_GROUP"
+          echo "DEBUG: EXISTING_IAM_ROLE_NAME=$EXISTING_IAM_ROLE_NAME"
+          echo "DEBUG: CUSTOM_AMI_ID=$CUSTOM_AMI_ID"
+          echo "DEBUG: CLONED_INSTANCE_TYPE=$CLONED_INSTANCE_TYPE"
+          echo "DEBUG: CLONE_INSTANCE_NAME=$CLONE_INSTANCE_NAME"
+          echo "DEBUG: ENVIRONMENT=$ENVIRONMENT"
+
           ENVIRONMENT=prod ./deploy.sh
 
       - name: Capture Terraform Outputs
