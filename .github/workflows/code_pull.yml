@@ -135,12 +135,36 @@ jobs:
           IFS=',' read -ra IDS <<< "${{ steps.instance_lookup.outputs.instance_ids }}"
           for INSTANCE_ID in "${IDS[@]}"; do
             echo "Waiting for instance $INSTANCE_ID..."
-            if ! aws ssm wait command-executed \
-              --command-id "$COMMAND_ID" \
-              --instance-id "$INSTANCE_ID" \
-              --max-attempts=30 \
-              --delay=10; then
-              echo "::warning::Timeout waiting for instance $INSTANCE_ID"
+            MAX_ATTEMPTS=30
+            DELAY=10
+            ATTEMPT=0
+            
+            while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+              STATUS=$(aws ssm get-command-invocation \
+                --command-id "$COMMAND_ID" \
+                --instance-id "$INSTANCE_ID" \
+                --query 'Status' \
+                --output text 2>/dev/null || echo "Unknown")
+              
+              if [ "$STATUS" = "Success" ] || [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ] || [ "$STATUS" = "TimedOut" ]; then
+                echo "Command completed on instance $INSTANCE_ID with status: $STATUS"
+                break
+              fi
+              
+              ATTEMPT=$((ATTEMPT + 1))
+              if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+                echo "Attempt $ATTEMPT/$MAX_ATTEMPTS: Status is $STATUS, waiting ${DELAY}s..."
+                sleep $DELAY
+              fi
+            done
+            
+            if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+              FINAL_STATUS=$(aws ssm get-command-invocation \
+                --command-id "$COMMAND_ID" \
+                --instance-id "$INSTANCE_ID" \
+                --query 'Status' \
+                --output text 2>/dev/null || echo "Unknown")
+              echo "::warning::Timeout waiting for instance $INSTANCE_ID (final status: $FINAL_STATUS)"
             fi
           done
 
