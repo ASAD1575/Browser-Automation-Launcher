@@ -109,6 +109,11 @@ jobs:
           # Split by semicolon and create JSON array
           COMMAND_JSON=$(echo "$COMMAND_SCRIPT" | jq -R -s 'split(";") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))')
           
+          if [ $? -ne 0 ] || [ -z "$COMMAND_JSON" ]; then
+            echo "::error::Failed to convert command to JSON format"
+            exit 1
+          fi
+          
           echo "Command JSON: $COMMAND_JSON"
           
           # Get instance IDs as comma-separated list
@@ -116,20 +121,47 @@ jobs:
           
           echo "Sending command to instances: $INSTANCE_IDS_CSV"
           
+          # Create parameters JSON file to avoid shell escaping issues
+          PARAMS_JSON=$(jq -n --argjson commands "$COMMAND_JSON" '{commands: $commands}')
+          
+          echo "Parameters JSON:"
+          echo "$PARAMS_JSON" | jq '.'
+          
           # Run the command using AWS-RunPowerShellScript document
+          # Capture stderr separately to check for actual errors
           COMMAND_RESPONSE=$(aws ssm send-command \
             --instance-ids "$INSTANCE_IDS_CSV" \
             --document-name "AWS-RunPowerShellScript" \
-            --parameters "{\"commands\":$COMMAND_JSON}" \
+            --parameters "$PARAMS_JSON" \
             --timeout-seconds 3600 \
-            --output json 2>&1)
+            --output json 2>ssm_error.log)
           
-          if echo "$COMMAND_RESPONSE" | grep -q "error\|Error"; then
-            echo "::error::Failed to send SSM command: $COMMAND_RESPONSE"
+          SSM_EXIT_CODE=$?
+          SSM_ERROR=$(cat ssm_error.log 2>/dev/null || echo "")
+          
+          # Check if AWS CLI command failed
+          if [ $SSM_EXIT_CODE -ne 0 ] || [ -n "$SSM_ERROR" ]; then
+            echo "::error::Failed to send SSM command"
+            echo "Exit code: $SSM_EXIT_CODE"
+            echo "Error output: $SSM_ERROR"
+            echo "Response: $COMMAND_RESPONSE"
             exit 1
           fi
           
-          COMMAND_ID=$(echo "$COMMAND_RESPONSE" | jq -r '.Command.CommandId' 2>/dev/null)
+          # Check if response is valid JSON and contains CommandId
+          if ! echo "$COMMAND_RESPONSE" | jq -e '.Command.CommandId' > /dev/null 2>&1; then
+            echo "::error::Invalid response from SSM (no CommandId found)"
+            echo "Response: $COMMAND_RESPONSE"
+            if echo "$COMMAND_RESPONSE" | jq -e '.__type' > /dev/null 2>&1; then
+              ERROR_TYPE=$(echo "$COMMAND_RESPONSE" | jq -r '.__type // "Unknown"')
+              ERROR_MESSAGE=$(echo "$COMMAND_RESPONSE" | jq -r '.message // .Message // "Unknown error"')
+              echo "Error Type: $ERROR_TYPE"
+              echo "Error Message: $ERROR_MESSAGE"
+            fi
+            exit 1
+          fi
+          
+          COMMAND_ID=$(echo "$COMMAND_RESPONSE" | jq -r '.Command.CommandId')
           
           if [ -z "$COMMAND_ID" ] || [ "$COMMAND_ID" = "null" ]; then
             echo "::error::Failed to extract Command ID from response: $COMMAND_RESPONSE"
