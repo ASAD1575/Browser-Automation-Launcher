@@ -26,7 +26,7 @@ jobs:
     
     env:
       # Use GitHub variable or fallback to default names
-      INSTANCE_NAMES: "${{ vars.STAGING_INSTANCE_NAMES || 'Browser Automation Launcher-2' }}"
+      INSTANCE_NAMES: "${{ vars.STAGING_INSTANCE_NAMES || 'Browser-Automation-Launcher-1-Dev' }}"
 
     steps:
       - name: Checkout code
