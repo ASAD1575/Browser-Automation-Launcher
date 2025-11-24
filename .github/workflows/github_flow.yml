@@ -4,13 +4,11 @@ on:
   push:
     branches:
       - main
-      - staging
     tags:
       - 'v*'
   pull_request:
     branches:
       - main
-      - staging
   workflow_dispatch:
     inputs:
       environment:
@@ -18,7 +16,7 @@ on:
         required: true
         default: 'dev'
         type: choice
-        options: [ dev, staging, prod ]
+        options: [ dev, prod ]
       action:
         description: 'Apply or destroy'
         required: true
@@ -50,7 +48,7 @@ jobs:
       - name: Install Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.9.8
+          terraform_version: 1.14.0
 
       - name: Deploy to dev
         run: |
@@ -106,7 +104,7 @@ jobs:
       - name: Install Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.9.8
+          terraform_version: 1.14.0
 
       - name: Deploy to staging
         run: |
@@ -159,7 +157,7 @@ jobs:
       - name: Install Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.9.8
+          terraform_version: 1.14.0
 
       - name: Deploy to Production
         run: |
