@@ -10,7 +10,7 @@ on:
         description: 'PowerShell script to execute on each Windows instance (semicolon-separated commands)'
         required: false
         default: |
-          cd C:\Users\ticketboat\Documents\Applications\browser-automation-launcher; New-Item -ItemType File -Path "C:\Users\ticketboat\Documents\Applications\browser-automation-launcher\logs\STOP" -Force; Stop-Process -Name python -Force -ErrorAction SilentlyContinue; git pull origin main; schtasks /run /tn "BrowserAutomationStartup"
+          cd C:\Users\ticketboat\Documents\applications\browser-automation-launcher; New-Item -ItemType File -Path "C:\Users\ticketboat\Documents\applications\browser-automation-launcher\logs\STOP" -Force; Stop-Process -Name python -Force -ErrorAction SilentlyContinue; git pull origin main; schtasks /run /tn "BrowserAutomationStartup"
 
 jobs:
   deploy-staging:
@@ -26,7 +26,7 @@ jobs:
     
     env:
       # Use GitHub variable or fallback to default names
-      INSTANCE_NAMES: "${{ vars.STAGING_INSTANCE_NAMES || 'Browser-Automation-Launcher-1-Dev' }}"
+      INSTANCE_NAMES: "${{ vars.STAGING_INSTANCE_NAMES || 'Browser-Automation-Launcher-1-Dev, Browser-Automation-Launcher-2-Dev' }}"
 
     steps:
       - name: Checkout code
@@ -53,23 +53,28 @@ jobs:
       - name: Lookup Instance IDs by Name
         id: instance_lookup
         run: |
-          # Convert comma-separated names into a filter string suitable for the AWS CLI
-          NAMES_ARRAY=$(echo "$INSTANCE_NAMES" | tr ',' ' ')
+          # Clean up the instance names (remove extra spaces, keep comma-separated)
+          INSTANCE_NAMES_CLEAN=$(echo "$INSTANCE_NAMES" | tr -d ' ' | sed 's/,,*/,/g' | sed 's/^,//' | sed 's/,$//')
+          
+          # Convert to array for display
+          NAMES_ARRAY=$(echo "$INSTANCE_NAMES_CLEAN" | tr ',' ' ')
           echo "Targeting names: $NAMES_ARRAY"
           
-          # Use describe-instances to filter by the 'Name' tag and output only the Instance IDs
+          # Use describe-instances to filter by the 'Name' tag
+          # AWS CLI expects comma-separated values in the Values parameter
           INSTANCE_IDS=$(aws ec2 describe-instances \
-            --filters "Name=tag:Name,Values=${NAMES_ARRAY}" "Name=instance-state-name,Values=running" \
+            --filters "Name=tag:Name,Values=${INSTANCE_NAMES_CLEAN}" "Name=instance-state-name,Values=running" \
             --query 'Reservations[].Instances[].InstanceId' \
             --output text)
             
           if [ -z "$INSTANCE_IDS" ]; then
-            echo "::error::No running instances found with the names specified: $INSTANCE_NAMES"
+            echo "::error::No running instances found with the names specified: $INSTANCE_NAMES_CLEAN"
+            echo "Searched for: $NAMES_ARRAY"
             exit 1
           fi
           
           # Store the found IDs as comma-separated string for the next step to consume
-          CSV_IDS=$(echo $INSTANCE_IDS | tr '\t' ',')
+          CSV_IDS=$(echo $INSTANCE_IDS | tr '\t' ',' | tr ' ' ',')
           
           echo "Found Instance IDs: $CSV_IDS"
           echo "instance_ids=$CSV_IDS" >> $GITHUB_OUTPUT
@@ -99,7 +104,7 @@ jobs:
             COMMAND_SCRIPT="${{ github.event.inputs.command_to_run }}"
           else
             # Default command for push events
-            COMMAND_SCRIPT='cd C:\Users\ticketboat\Documents\Applications\browser-automation-launcher; New-Item -ItemType File -Path "C:\Users\ticketboat\Documents\Applications\browser-automation-launcher\logs\STOP" -Force; Stop-Process -Name python -Force -ErrorAction SilentlyContinue; git pull origin staging; schtasks /run /tn "BrowserAutomationStartup"'
+            COMMAND_SCRIPT='cd C:\Users\ticketboat\Documents\applications\browser-automation-launcher; New-Item -ItemType File -Path "C:\Users\ticketboat\Documents\applications\browser-automation-launcher\logs\STOP" -Force; Stop-Process -Name python -Force -ErrorAction SilentlyContinue; git pull origin main; schtasks /run /tn "BrowserAutomationStartup"'
           fi
           
           echo "Executing script on instances:"
