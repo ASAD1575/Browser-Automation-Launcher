@@ -188,12 +188,32 @@ jobs:
           COMMAND_ID="${{ steps.execute_command.outputs.command_id }}"
           
           echo "Waiting for command execution to complete on all instances..."
+          echo "Command ID: $COMMAND_ID"
+          
+          # First, check overall command status
+          echo "Checking overall command status..."
+          COMMAND_STATUS=$(aws ssm list-commands \
+            --command-id "$COMMAND_ID" \
+            --query 'Commands[0]' \
+            --output json 2>/dev/null)
+          
+          if [ -n "$COMMAND_STATUS" ] && echo "$COMMAND_STATUS" | jq -e '.CommandId' > /dev/null 2>&1; then
+            OVERALL_STATUS=$(echo "$COMMAND_STATUS" | jq -r '.Status // "Unknown"')
+            COMPLETED_COUNT=$(echo "$COMMAND_STATUS" | jq -r '.CompletedCount // 0')
+            ERROR_COUNT=$(echo "$COMMAND_STATUS" | jq -r '.ErrorCount // 0')
+            TARGET_COUNT=$(echo "$COMMAND_STATUS" | jq -r '.TargetCount // 0')
+            echo "Overall Command Status: $OVERALL_STATUS"
+            echo "Progress: $COMPLETED_COUNT/$TARGET_COUNT completed, $ERROR_COUNT errors"
+          fi
+          
           IFS=',' read -ra IDS <<< "${{ steps.instance_lookup.outputs.instance_ids }}"
           for INSTANCE_ID in "${IDS[@]}"; do
-            echo "Waiting for instance $INSTANCE_ID..."
+            echo ""
+            echo "=== Waiting for instance $INSTANCE_ID ==="
             MAX_ATTEMPTS=60
             DELAY=10
             ATTEMPT=0
+            LAST_STATUS=""
             
             while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
               # Get full invocation details for better debugging
@@ -202,8 +222,21 @@ jobs:
                 --instance-id "$INSTANCE_ID" \
                 --output json 2>/dev/null)
               
-              if [ -z "$INVOCATION" ] || echo "$INVOCATION" | grep -q "error\|Error"; then
-                echo "Attempt $ATTEMPT/$MAX_ATTEMPTS: Could not retrieve command status, waiting ${DELAY}s..."
+              # Check if we got a valid response (not an AWS error)
+              if [ -z "$INVOCATION" ]; then
+                echo "Attempt $ATTEMPT/$MAX_ATTEMPTS: No response from SSM, waiting ${DELAY}s..."
+                ATTEMPT=$((ATTEMPT + 1))
+                if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+                  sleep $DELAY
+                fi
+                continue
+              fi
+              
+              # Check if this is an AWS API error response
+              if echo "$INVOCATION" | jq -e '.__type' > /dev/null 2>&1; then
+                ERROR_TYPE=$(echo "$INVOCATION" | jq -r '.__type // "Unknown"')
+                ERROR_MSG=$(echo "$INVOCATION" | jq -r '.message // .Message // "Unknown error"')
+                echo "Attempt $ATTEMPT/$MAX_ATTEMPTS: AWS Error - $ERROR_TYPE: $ERROR_MSG"
                 ATTEMPT=$((ATTEMPT + 1))
                 if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
                   sleep $DELAY
@@ -214,19 +247,28 @@ jobs:
               STATUS=$(echo "$INVOCATION" | jq -r '.Status' 2>/dev/null || echo "Unknown")
               STATUS_DETAILS=$(echo "$INVOCATION" | jq -r '.StatusDetails // "N/A"' 2>/dev/null)
               DOCUMENT_NAME=$(echo "$INVOCATION" | jq -r '.DocumentName // "N/A"' 2>/dev/null)
+              RESPONSE_CODE=$(echo "$INVOCATION" | jq -r '.ResponseCode // "N/A"' 2>/dev/null)
               
-              echo "Attempt $ATTEMPT/$MAX_ATTEMPTS: Status=$STATUS, Details=$STATUS_DETAILS, Document=$DOCUMENT_NAME"
+              # Only print status if it changed
+              if [ "$STATUS" != "$LAST_STATUS" ]; then
+                echo "Attempt $ATTEMPT/$MAX_ATTEMPTS: Status=$STATUS, Details=$STATUS_DETAILS, ResponseCode=$RESPONSE_CODE"
+                LAST_STATUS="$STATUS"
+              fi
               
               if [ "$STATUS" = "Success" ] || [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ] || [ "$STATUS" = "TimedOut" ]; then
-                echo "Command completed on instance $INSTANCE_ID with status: $STATUS"
+                echo "✓ Command completed on instance $INSTANCE_ID with status: $STATUS"
                 break
               fi
               
-              # If status is still Pending or InProgress, show more details
-              if [ "$STATUS" = "Pending" ] || [ "$STATUS" = "InProgress" ]; then
-                echo "Command is $STATUS on instance $INSTANCE_ID"
-                if [ "$STATUS_DETAILS" != "N/A" ] && [ "$STATUS_DETAILS" != "null" ]; then
-                  echo "Status details: $STATUS_DETAILS"
+              # If status is still Pending after several attempts, check SSM agent status
+              if [ "$STATUS" = "Pending" ] && [ $ATTEMPT -ge 3 ]; then
+                SSM_STATUS=$(aws ssm describe-instance-information \
+                  --filters "Key=InstanceIds,Values=$INSTANCE_ID" \
+                  --query 'InstanceInformationList[0].PingStatus' \
+                  --output text 2>/dev/null || echo "Unknown")
+                
+                if [ "$SSM_STATUS" != "Online" ]; then
+                  echo "⚠ Warning: Instance SSM agent status is $SSM_STATUS (expected Online)"
                 fi
               fi
               
@@ -242,12 +284,20 @@ jobs:
                 --instance-id "$INSTANCE_ID" \
                 --output json 2>/dev/null)
               
-              if [ -n "$FINAL_INVOCATION" ]; then
+              if [ -n "$FINAL_INVOCATION" ] && ! echo "$FINAL_INVOCATION" | jq -e '.__type' > /dev/null 2>&1; then
                 FINAL_STATUS=$(echo "$FINAL_INVOCATION" | jq -r '.Status' 2>/dev/null || echo "Unknown")
                 FINAL_DETAILS=$(echo "$FINAL_INVOCATION" | jq -r '.StatusDetails // "N/A"' 2>/dev/null)
                 echo "::warning::Timeout waiting for instance $INSTANCE_ID (final status: $FINAL_STATUS, details: $FINAL_DETAILS)"
                 echo "Full invocation details:"
                 echo "$FINAL_INVOCATION" | jq '.'
+                
+                # Additional diagnostics
+                echo ""
+                echo "=== Diagnostic Information ==="
+                echo "Checking SSM agent status..."
+                aws ssm describe-instance-information \
+                  --filters "Key=InstanceIds,Values=$INSTANCE_ID" \
+                  --output json | jq '.InstanceInformationList[0]'
               else
                 echo "::warning::Timeout waiting for instance $INSTANCE_ID (could not retrieve final status)"
               fi
