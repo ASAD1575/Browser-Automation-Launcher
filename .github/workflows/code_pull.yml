@@ -109,22 +109,41 @@ jobs:
           # Split by semicolon and create JSON array
           COMMAND_JSON=$(echo "$COMMAND_SCRIPT" | jq -R -s 'split(";") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))')
           
+          echo "Command JSON: $COMMAND_JSON"
+          
           # Get instance IDs as comma-separated list
           INSTANCE_IDS_CSV="${{ steps.instance_lookup.outputs.instance_ids }}"
           
+          echo "Sending command to instances: $INSTANCE_IDS_CSV"
+          
           # Run the command using AWS-RunPowerShellScript document
-          COMMAND_ID=$(aws ssm send-command \
+          COMMAND_RESPONSE=$(aws ssm send-command \
             --instance-ids "$INSTANCE_IDS_CSV" \
             --document-name "AWS-RunPowerShellScript" \
             --parameters "{\"commands\":$COMMAND_JSON}" \
-            --output text --query 'Command.CommandId' 2>&1)
+            --timeout-seconds 3600 \
+            --output json 2>&1)
           
-          if [ -z "$COMMAND_ID" ] || echo "$COMMAND_ID" | grep -q "error"; then
-            echo "::error::Failed to send SSM command: $COMMAND_ID"
+          if echo "$COMMAND_RESPONSE" | grep -q "error\|Error"; then
+            echo "::error::Failed to send SSM command: $COMMAND_RESPONSE"
+            exit 1
+          fi
+          
+          COMMAND_ID=$(echo "$COMMAND_RESPONSE" | jq -r '.Command.CommandId' 2>/dev/null)
+          
+          if [ -z "$COMMAND_ID" ] || [ "$COMMAND_ID" = "null" ]; then
+            echo "::error::Failed to extract Command ID from response: $COMMAND_RESPONSE"
             exit 1
           fi
           
           echo "SSM Command ID: $COMMAND_ID"
+          echo "Full command response:"
+          echo "$COMMAND_RESPONSE" | jq '.'
+          
+          # Wait a moment for the command to be registered
+          echo "Waiting 5 seconds for command to be registered..."
+          sleep 5
+          
           echo "command_id=$COMMAND_ID" >> $GITHUB_OUTPUT
 
       - name: Wait for Command Completion
@@ -135,36 +154,66 @@ jobs:
           IFS=',' read -ra IDS <<< "${{ steps.instance_lookup.outputs.instance_ids }}"
           for INSTANCE_ID in "${IDS[@]}"; do
             echo "Waiting for instance $INSTANCE_ID..."
-            MAX_ATTEMPTS=30
+            MAX_ATTEMPTS=60
             DELAY=10
             ATTEMPT=0
             
             while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
-              STATUS=$(aws ssm get-command-invocation \
+              # Get full invocation details for better debugging
+              INVOCATION=$(aws ssm get-command-invocation \
                 --command-id "$COMMAND_ID" \
                 --instance-id "$INSTANCE_ID" \
-                --query 'Status' \
-                --output text 2>/dev/null || echo "Unknown")
+                --output json 2>/dev/null)
+              
+              if [ -z "$INVOCATION" ] || echo "$INVOCATION" | grep -q "error\|Error"; then
+                echo "Attempt $ATTEMPT/$MAX_ATTEMPTS: Could not retrieve command status, waiting ${DELAY}s..."
+                ATTEMPT=$((ATTEMPT + 1))
+                if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+                  sleep $DELAY
+                fi
+                continue
+              fi
+              
+              STATUS=$(echo "$INVOCATION" | jq -r '.Status' 2>/dev/null || echo "Unknown")
+              STATUS_DETAILS=$(echo "$INVOCATION" | jq -r '.StatusDetails // "N/A"' 2>/dev/null)
+              DOCUMENT_NAME=$(echo "$INVOCATION" | jq -r '.DocumentName // "N/A"' 2>/dev/null)
+              
+              echo "Attempt $ATTEMPT/$MAX_ATTEMPTS: Status=$STATUS, Details=$STATUS_DETAILS, Document=$DOCUMENT_NAME"
               
               if [ "$STATUS" = "Success" ] || [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ] || [ "$STATUS" = "TimedOut" ]; then
                 echo "Command completed on instance $INSTANCE_ID with status: $STATUS"
                 break
               fi
               
+              # If status is still Pending or InProgress, show more details
+              if [ "$STATUS" = "Pending" ] || [ "$STATUS" = "InProgress" ]; then
+                echo "Command is $STATUS on instance $INSTANCE_ID"
+                if [ "$STATUS_DETAILS" != "N/A" ] && [ "$STATUS_DETAILS" != "null" ]; then
+                  echo "Status details: $STATUS_DETAILS"
+                fi
+              fi
+              
               ATTEMPT=$((ATTEMPT + 1))
               if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
-                echo "Attempt $ATTEMPT/$MAX_ATTEMPTS: Status is $STATUS, waiting ${DELAY}s..."
                 sleep $DELAY
               fi
             done
             
             if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
-              FINAL_STATUS=$(aws ssm get-command-invocation \
+              FINAL_INVOCATION=$(aws ssm get-command-invocation \
                 --command-id "$COMMAND_ID" \
                 --instance-id "$INSTANCE_ID" \
-                --query 'Status' \
-                --output text 2>/dev/null || echo "Unknown")
-              echo "::warning::Timeout waiting for instance $INSTANCE_ID (final status: $FINAL_STATUS)"
+                --output json 2>/dev/null)
+              
+              if [ -n "$FINAL_INVOCATION" ]; then
+                FINAL_STATUS=$(echo "$FINAL_INVOCATION" | jq -r '.Status' 2>/dev/null || echo "Unknown")
+                FINAL_DETAILS=$(echo "$FINAL_INVOCATION" | jq -r '.StatusDetails // "N/A"' 2>/dev/null)
+                echo "::warning::Timeout waiting for instance $INSTANCE_ID (final status: $FINAL_STATUS, details: $FINAL_DETAILS)"
+                echo "Full invocation details:"
+                echo "$FINAL_INVOCATION" | jq '.'
+              else
+                echo "::warning::Timeout waiting for instance $INSTANCE_ID (could not retrieve final status)"
+              fi
             fi
           done
 
@@ -176,42 +225,72 @@ jobs:
           echo "Checking command status for all instances..."
           IFS=',' read -ra IDS <<< "${{ steps.instance_lookup.outputs.instance_ids }}"
           for INSTANCE_ID in "${IDS[@]}"; do
-            STATUS=$(aws ssm get-command-invocation \
+            INVOCATION=$(aws ssm get-command-invocation \
               --command-id "$COMMAND_ID" \
               --instance-id "$INSTANCE_ID" \
-              --query 'Status' \
-              --output text 2>/dev/null || echo "Unknown")
+              --output json 2>/dev/null)
+            
+            if [ -z "$INVOCATION" ] || echo "$INVOCATION" | grep -q "error\|Error"; then
+              echo ""
+              echo "=========================================="
+              echo "Instance: $INSTANCE_ID"
+              echo "Status: Error retrieving invocation"
+              echo "=========================================="
+              echo "Could not retrieve command invocation details"
+              FAILED_INSTANCES=$((FAILED_INSTANCES + 1))
+              echo ""
+              continue
+            fi
+            
+            STATUS=$(echo "$INVOCATION" | jq -r '.Status' 2>/dev/null || echo "Unknown")
+            STATUS_DETAILS=$(echo "$INVOCATION" | jq -r '.StatusDetails // "N/A"' 2>/dev/null)
+            RESPONSE_CODE=$(echo "$INVOCATION" | jq -r '.ResponseCode // "N/A"' 2>/dev/null)
+            EXECUTION_ELAPSED=$(echo "$INVOCATION" | jq -r '.ExecutionElapsedTime // "N/A"' 2>/dev/null)
+            STANDARD_OUTPUT=$(echo "$INVOCATION" | jq -r '.StandardOutputContent // ""' 2>/dev/null)
+            STANDARD_ERROR=$(echo "$INVOCATION" | jq -r '.StandardErrorContent // ""' 2>/dev/null)
             
             echo ""
             echo "=========================================="
             echo "Instance: $INSTANCE_ID"
             echo "Status: $STATUS"
+            echo "Status Details: $STATUS_DETAILS"
+            echo "Response Code: $RESPONSE_CODE"
+            echo "Execution Time: ${EXECUTION_ELAPSED}ms"
             echo "=========================================="
             
             if [ "$STATUS" = "Success" ]; then
               echo "--- Standard Output ---"
-              aws ssm get-command-invocation \
-                --command-id "$COMMAND_ID" \
-                --instance-id "$INSTANCE_ID" \
-                --query 'StandardOutputContent' \
-                --output text || echo "(No output)"
+              if [ -n "$STANDARD_OUTPUT" ] && [ "$STANDARD_OUTPUT" != "null" ]; then
+                echo "$STANDARD_OUTPUT"
+              else
+                echo "(No output)"
+              fi
             else
               echo "::error::Command failed on instance $INSTANCE_ID with status: $STATUS"
+              if [ "$STATUS_DETAILS" != "N/A" ] && [ "$STATUS_DETAILS" != "null" ]; then
+                echo "Status Details: $STATUS_DETAILS"
+              fi
               FAILED_INSTANCES=$((FAILED_INSTANCES + 1))
               
               echo "--- Standard Output ---"
-              aws ssm get-command-invocation \
-                --command-id "$COMMAND_ID" \
-                --instance-id "$INSTANCE_ID" \
-                --query 'StandardOutputContent' \
-                --output text || echo "(No output)"
+              if [ -n "$STANDARD_OUTPUT" ] && [ "$STANDARD_OUTPUT" != "null" ]; then
+                echo "$STANDARD_OUTPUT"
+              else
+                echo "(No output)"
+              fi
               
               echo "--- Standard Error ---"
-              aws ssm get-command-invocation \
-                --command-id "$COMMAND_ID" \
-                --instance-id "$INSTANCE_ID" \
-                --query 'StandardErrorContent' \
-                --output text || echo "(No error output)"
+              if [ -n "$STANDARD_ERROR" ] && [ "$STANDARD_ERROR" != "null" ]; then
+                echo "$STANDARD_ERROR"
+              else
+                echo "(No error output)"
+              fi
+              
+              # Show full invocation for debugging
+              if [ "$STATUS" = "Pending" ]; then
+                echo "--- Full Invocation Details (for debugging) ---"
+                echo "$INVOCATION" | jq '.'
+              fi
             fi
             echo ""
           done
