@@ -139,12 +139,23 @@ jobs:
           SSM_EXIT_CODE=$?
           SSM_ERROR=$(cat ssm_error.log 2>/dev/null || echo "")
           
-          # Check if AWS CLI command failed
-          if [ $SSM_EXIT_CODE -ne 0 ] || [ -n "$SSM_ERROR" ]; then
-            echo "::error::Failed to send SSM command"
-            echo "Exit code: $SSM_EXIT_CODE"
-            echo "Error output: $SSM_ERROR"
+          # Check if AWS CLI command failed (exit code non-zero)
+          if [ $SSM_EXIT_CODE -ne 0 ]; then
+            echo "::error::Failed to send SSM command (exit code: $SSM_EXIT_CODE)"
+            if [ -n "$SSM_ERROR" ]; then
+              echo "Error output: $SSM_ERROR"
+            fi
             echo "Response: $COMMAND_RESPONSE"
+            exit 1
+          fi
+          
+          # Check if response contains an AWS error (has __type field indicating an error)
+          if echo "$COMMAND_RESPONSE" | jq -e '.__type' > /dev/null 2>&1; then
+            ERROR_TYPE=$(echo "$COMMAND_RESPONSE" | jq -r '.__type // "Unknown"')
+            ERROR_MESSAGE=$(echo "$COMMAND_RESPONSE" | jq -r '.message // .Message // "Unknown error"')
+            echo "::error::AWS API Error: $ERROR_TYPE"
+            echo "Error Message: $ERROR_MESSAGE"
+            echo "Full response: $COMMAND_RESPONSE"
             exit 1
           fi
           
@@ -152,12 +163,6 @@ jobs:
           if ! echo "$COMMAND_RESPONSE" | jq -e '.Command.CommandId' > /dev/null 2>&1; then
             echo "::error::Invalid response from SSM (no CommandId found)"
             echo "Response: $COMMAND_RESPONSE"
-            if echo "$COMMAND_RESPONSE" | jq -e '.__type' > /dev/null 2>&1; then
-              ERROR_TYPE=$(echo "$COMMAND_RESPONSE" | jq -r '.__type // "Unknown"')
-              ERROR_MESSAGE=$(echo "$COMMAND_RESPONSE" | jq -r '.message // .Message // "Unknown error"')
-              echo "Error Type: $ERROR_TYPE"
-              echo "Error Message: $ERROR_MESSAGE"
-            fi
             exit 1
           fi
           
