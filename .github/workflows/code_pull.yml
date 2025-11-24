@@ -10,7 +10,7 @@ on:
         description: 'PowerShell script to execute on each Windows instance (semicolon-separated commands)'
         required: false
         default: |
-          cd C:\Users\ticketboat\Documents\Applications\browser-automation-launcher; New-Item -ItemType File -Path "C:\Users\ticketboat\Documents\Applications\browser-automation-launcher\logs\STOP" -Force; Stop-Process -Name python -Force -ErrorAction SilentlyContinue; git pull origin staging; schtasks /run /tn "BrowserAutomationStartup"
+          cd C:\Users\ticketboat\Documents\applications\browser-automation-launcher; New-Item -ItemType File -Path "C:\Users\ticketboat\Documents\Applications\browser-automation-launcher\logs\STOP" -Force; Stop-Process -Name python -Force -ErrorAction SilentlyContinue; git pull origin staging; schtasks /run /tn "BrowserAutomationStartup"
 
 jobs:
   deploy-staging:
@@ -38,8 +38,18 @@ jobs:
           role-to-assume: arn:aws:iam::375299695019:role/GitHubActionsTerraformRole
           aws-region: us-east-1
 
-      - name: Install jq (for JSON parsing)
-        run: sudo apt-get update && sudo apt-get install -y jq
+    - name: Install or Upgrade AWS CLI v2
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y unzip curl
+        curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+        unzip -o awscliv2.zip
+        sudo ./aws/install
+        aws --version
+
+    - name: Install jq (for JSON parsing)
+      run: sudo apt-get update && sudo apt-get install -y jq
+        
         
       - name: Lookup Instance IDs by Name
         id: instance_lookup
@@ -128,8 +138,8 @@ jobs:
             if ! aws ssm wait command-executed \
               --command-id "$COMMAND_ID" \
               --instance-id "$INSTANCE_ID" \
-              --max-attempts 30 \
-              --delay 10; then
+              --max-attempts=30 \
+              --delay=10; then
               echo "::warning::Timeout waiting for instance $INSTANCE_ID"
             fi
           done
