@@ -75,14 +75,8 @@ jobs:
             echo "$SSH_KEY_3" > ~/.ssh/deploy_key
             SSH_HOST="$SSH_HOST_3"
           fi
-
+          
           chmod 600 ~/.ssh/deploy_key
-          
-          # Add SSH key to agent (only need to do once)
-          eval $(ssh-agent -s)
-          ssh-add ~/.ssh/deploy_key
-          
-          # Ensure known_hosts file exists and SSH host keys are added
           ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
           
           echo "ssh_host=$SSH_HOST" >> $GITHUB_OUTPUT
@@ -91,35 +85,37 @@ jobs:
 
       - name: Stop Application
         run: |
-          ssh -o StrictHostKeyChecking=no \
+          ssh -vvv -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
             "powershell -Command \"New-Item -ItemType File -Path '${{ steps.setup.outputs.app_dir }}\logs\STOP' -Force -ErrorAction SilentlyContinue; Stop-Process -Name python -Force -ErrorAction SilentlyContinue\""
 
       - name: Pull Latest Code
         run: |
-          ssh -o StrictHostKeyChecking=no \
+          ssh -vvv -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
             "powershell -Command \"cd '${{ steps.setup.outputs.app_dir }}'; git pull origin staging\""
 
       - name: Restart Application
         run: |
-          ssh -o StrictHostKeyChecking=no \
+          ssh -vvv -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
             "powershell -Command \"schtasks /run /tn 'BrowserAutomationStartup'\""
 
       - name: Verify Deployment
         run: |
-          ssh -o StrictHostKeyChecking=no \
+          ssh -vvv -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
             "powershell -Command \"cd '${{ steps.setup.outputs.app_dir }}'; git log -1 --oneline\""
 
       - name: Cleanup SSH Key
         if: always()
-        run: |
-          # Kill the SSH agent after use
-          ssh-agent -k
-          rm -f ~/.ssh/deploy_key
+        run: rm -f ~/.ssh/deploy_key
+
