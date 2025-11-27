@@ -85,37 +85,36 @@ jobs:
 
       - name: Stop Application
         run: |
-          ssh -vvv -i ~/.ssh/deploy_key \
+          ssh -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
-            "powershell -Command \"New-Item -ItemType File -Path '${{ steps.setup.outputs.app_dir }}\logs\STOP' -Force -ErrorAction SilentlyContinue; Stop-Process -Name python -Force -ErrorAction SilentlyContinue\""
+            "powershell -Command \"\$ErrorActionPreference = 'Continue'; New-Item -ItemType File -Path '${{ steps.setup.outputs.app_dir }}\logs\STOP' -Force -ErrorAction SilentlyContinue | Out-Null; try { Stop-Process -Name python -Force -ErrorAction SilentlyContinue } catch { }; exit 0\""
 
       - name: Pull Latest Code
         run: |
-          ssh -vvv -i ~/.ssh/deploy_key \
+          ssh -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
-            "powershell -Command \"cd '${{ steps.setup.outputs.app_dir }}'; git pull origin staging\""
+            "powershell -Command \"cd '${{ steps.setup.outputs.app_dir }}'; git pull origin staging; if (\$LASTEXITCODE -ne 0) { exit \$LASTEXITCODE }\""
 
       - name: Restart Application
         run: |
-          ssh -vvv -i ~/.ssh/deploy_key \
+          ssh -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
-            "powershell -Command \"schtasks /run /tn 'BrowserAutomationStartup'\""
+            "powershell -Command \"schtasks /run /tn 'BrowserAutomationStartup'; if (\$LASTEXITCODE -ne 0) { exit \$LASTEXITCODE }\""
 
       - name: Verify Deployment
         run: |
-          ssh -vvv -i ~/.ssh/deploy_key \
+          ssh -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
-            "powershell -Command \"cd '${{ steps.setup.outputs.app_dir }}'; git log -1 --oneline\""
+            "powershell -Command \"cd '${{ steps.setup.outputs.app_dir }}'; git log -1 --oneline; if (\$LASTEXITCODE -ne 0) { exit \$LASTEXITCODE }\""
 
       - name: Cleanup SSH Key
         if: always()
         run: rm -f ~/.ssh/deploy_key
-
