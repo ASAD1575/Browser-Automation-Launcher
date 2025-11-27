@@ -36,12 +36,15 @@ jobs:
           - name: EC2-Server-1
             host_secret: EC2_HOST_1
             key_secret: EC2_SSH_PRIVATE_KEY_1
+            password_secret: EC2_SSH_PASSWORD_1
           - name: EC2-Server-2
             host_secret: EC2_HOST_2
             key_secret: EC2_SSH_PRIVATE_KEY_2
+            password_secret: EC2_SSH_PASSWORD_2
           - name: EC2-Server-3
             host_secret: EC2_HOST_3
             key_secret: EC2_SSH_PRIVATE_KEY_3
+            password_secret: EC2_SSH_PASSWORD_3
       fail-fast: false
 
     steps:
@@ -60,6 +63,9 @@ jobs:
           SSH_HOST_1: ${{ secrets.EC2_HOST_1 }}
           SSH_HOST_2: ${{ secrets.EC2_HOST_2 }}
           SSH_HOST_3: ${{ secrets.EC2_HOST_3 }}
+          SSH_PASSWORD_1: ${{ secrets.EC2_SSH_PASSWORD_1 }}
+          SSH_PASSWORD_2: ${{ secrets.EC2_SSH_PASSWORD_2 }}
+          SSH_PASSWORD_3: ${{ secrets.EC2_SSH_PASSWORD_3 }}
         run: |
           mkdir -p ~/.ssh
           
@@ -67,12 +73,15 @@ jobs:
           if [ "${{ matrix.server.name }}" == "EC2-Server-1" ]; then
             echo "$SSH_KEY_1" > ~/.ssh/deploy_key
             SSH_HOST="$SSH_HOST_1"
+            PASSWORD="$SSH_PASSWORD_1"
           elif [ "${{ matrix.server.name }}" == "EC2-Server-2" ]; then
             echo "$SSH_KEY_2" > ~/.ssh/deploy_key
             SSH_HOST="$SSH_HOST_2"
+            PASSWORD="$SSH_PASSWORD_2"
           elif [ "${{ matrix.server.name }}" == "EC2-Server-3" ]; then
             echo "$SSH_KEY_3" > ~/.ssh/deploy_key
             SSH_HOST="$SSH_HOST_3"
+            PASSWORD="$SSH_PASSWORD_3"
           fi
 
           chmod 600 ~/.ssh/deploy_key
@@ -83,38 +92,63 @@ jobs:
           echo "ssh_host=$SSH_HOST" >> $GITHUB_OUTPUT
           echo "ssh_user=$SSH_USER" >> $GITHUB_OUTPUT
           echo "app_dir=$APP_DIR" >> $GITHUB_OUTPUT
+          echo "password=$PASSWORD" >> $GITHUB_OUTPUT
 
       - name: Stop Application
         run: |
-          ssh -vvv -i ~/.ssh/deploy_key \
-            -o StrictHostKeyChecking=no \
-            -o UserKnownHostsFile=~/.ssh/known_hosts \
-            "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
-            "powershell -Command \"New-Item -ItemType File -Path '${{ steps.setup.outputs.app_dir }}\logs\STOP' -Force -ErrorAction SilentlyContinue; Stop-Process -Name python -Force -ErrorAction SilentlyContinue\""
+          if [ -f ~/.ssh/deploy_key ]; then
+            ssh -vvv -i ~/.ssh/deploy_key \
+              -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=~/.ssh/known_hosts \
+              "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
+              "powershell -Command \"New-Item -ItemType File -Path '${{ steps.setup.outputs.app_dir }}\logs\STOP' -Force -ErrorAction SilentlyContinue; Stop-Process -Name python -Force -ErrorAction SilentlyContinue\""
+          else
+            sshpass -p "${{ steps.setup.outputs.password }}" ssh -o StrictHostKeyChecking=no \
+              "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
+              "powershell -Command \"New-Item -ItemType File -Path '${{ steps.setup.outputs.app_dir }}\logs\STOP' -Force -ErrorAction SilentlyContinue; Stop-Process -Name python -Force -ErrorAction SilentlyContinue\""
+          fi
 
       - name: Pull Latest Code
         run: |
-          ssh -vvv -i ~/.ssh/deploy_key \
-            -o StrictHostKeyChecking=no \
-            -o UserKnownHostsFile=~/.ssh/known_hosts \
-            "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
-            "powershell -Command \"cd '${{ steps.setup.outputs.app_dir }}'; git pull origin staging\""
+          if [ -f ~/.ssh/deploy_key ]; then
+            ssh -vvv -i ~/.ssh/deploy_key \
+              -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=~/.ssh/known_hosts \
+              "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
+              "powershell -Command \"cd '${{ steps.setup.outputs.app_dir }}'; git pull origin staging\""
+          else
+            sshpass -p "${{ steps.setup.outputs.password }}" ssh -o StrictHostKeyChecking=no \
+              "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
+              "powershell -Command \"cd '${{ steps.setup.outputs.app_dir }}'; git pull origin staging\""
+          fi
 
       - name: Restart Application
         run: |
-          ssh -vvv -i ~/.ssh/deploy_key \
-            -o StrictHostKeyChecking=no \
-            -o UserKnownHostsFile=~/.ssh/known_hosts \
-            "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
-            "powershell -Command \"schtasks /run /tn 'BrowserAutomationStartup'\""
+          if [ -f ~/.ssh/deploy_key ]; then
+            ssh -vvv -i ~/.ssh/deploy_key \
+              -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=~/.ssh/known_hosts \
+              "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
+              "powershell -Command \"schtasks /run /tn 'BrowserAutomationStartup'\""
+          else
+            sshpass -p "${{ steps.setup.outputs.password }}" ssh -o StrictHostKeyChecking=no \
+              "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
+              "powershell -Command \"schtasks /run /tn 'BrowserAutomationStartup'\""
+          fi
 
       - name: Verify Deployment
         run: |
-          ssh -vvv -i ~/.ssh/deploy_key \
-            -o StrictHostKeyChecking=no \
-            -o UserKnownHostsFile=~/.ssh/known_hosts \
-            "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
-            "powershell -Command \"cd '${{ steps.setup.outputs.app_dir }}'; git log -1 --oneline\""
+          if [ -f ~/.ssh/deploy_key ]; then
+            ssh -vvv -i ~/.ssh/deploy_key \
+              -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=~/.ssh/known_hosts \
+              "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
+              "powershell -Command \"cd '${{ steps.setup.outputs.app_dir }}'; git log -1 --oneline\""
+          else
+            sshpass -p "${{ steps.setup.outputs.password }}" ssh -o StrictHostKeyChecking=no \
+              "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
+              "powershell -Command \"cd '${{ steps.setup.outputs.app_dir }}'; git log -1 --oneline\""
+          fi
 
       - name: Cleanup SSH Key
         if: always()
