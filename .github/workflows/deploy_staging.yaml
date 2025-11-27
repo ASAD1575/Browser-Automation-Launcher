@@ -71,15 +71,15 @@ jobs:
           
           # Determine which host and key to use based on matrix server name
           if [ "${{ matrix.server.name }}" == "EC2-Server-1" ]; then
-            echo "$SSH_KEY_1" > ~/.ssh/deploy_key
+            printf '%s\n' "$SSH_KEY_1" > ~/.ssh/deploy_key
             SSH_HOST="$SSH_HOST_1"
             PASSWORD="$SSH_PASSWORD_1"
           elif [ "${{ matrix.server.name }}" == "EC2-Server-2" ]; then
-            echo "$SSH_KEY_2" > ~/.ssh/deploy_key
+            printf '%s\n' "$SSH_KEY_2" > ~/.ssh/deploy_key
             SSH_HOST="$SSH_HOST_2"
             PASSWORD="$SSH_PASSWORD_2"
           elif [ "${{ matrix.server.name }}" == "EC2-Server-3" ]; then
-            echo "$SSH_KEY_3" > ~/.ssh/deploy_key
+            printf '%s\n' "$SSH_KEY_3" > ~/.ssh/deploy_key
             SSH_HOST="$SSH_HOST_3"
             PASSWORD="$SSH_PASSWORD_3"
           fi
@@ -94,6 +94,20 @@ jobs:
           echo "app_dir=$APP_DIR" >> $GITHUB_OUTPUT
           echo "password=$PASSWORD" >> $GITHUB_OUTPUT
 
+      - name: Test SSH Connection
+        run: |
+          if [ -f ~/.ssh/deploy_key ]; then
+            ssh -vvv -i ~/.ssh/deploy_key \
+              -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=~/.ssh/known_hosts \
+              "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
+              "echo 'SSH connection successful'"
+          else
+            sshpass -p "${{ steps.setup.outputs.password }}" ssh -vvv -o StrictHostKeyChecking=no \
+              "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
+              "echo 'SSH connection successful'"
+          fi
+
       - name: Stop Application
         run: |
           if [ -f ~/.ssh/deploy_key ]; then
@@ -103,7 +117,7 @@ jobs:
               "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
               "powershell -Command \"New-Item -ItemType File -Path '${{ steps.setup.outputs.app_dir }}\logs\STOP' -Force -ErrorAction SilentlyContinue; Stop-Process -Name python -Force -ErrorAction SilentlyContinue\""
           else
-            sshpass -p "${{ steps.setup.outputs.password }}" ssh -o StrictHostKeyChecking=no \
+            sshpass -p "${{ steps.setup.outputs.password }}" ssh -vvv -o StrictHostKeyChecking=no \
               "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
               "powershell -Command \"New-Item -ItemType File -Path '${{ steps.setup.outputs.app_dir }}\logs\STOP' -Force -ErrorAction SilentlyContinue; Stop-Process -Name python -Force -ErrorAction SilentlyContinue\""
           fi
@@ -131,7 +145,7 @@ jobs:
               "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
               "powershell -Command \"schtasks /run /tn 'BrowserAutomationStartup'\""
           else
-            sshpass -p "${{ steps.setup.outputs.password }}" ssh -o StrictHostKeyChecking=no \
+            sshpass -p "${{ steps.setup.outputs.password }}" ssh -vvv -o StrictHostKeyChecking=no \
               "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
               "powershell -Command \"schtasks /run /tn 'BrowserAutomationStartup'\""
           fi
@@ -145,7 +159,7 @@ jobs:
               "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
               "powershell -Command \"cd '${{ steps.setup.outputs.app_dir }}'; git log -1 --oneline\""
           else
-            sshpass -p "${{ steps.setup.outputs.password }}" ssh -o StrictHostKeyChecking=no \
+            sshpass -p "${{ steps.setup.outputs.password }}" ssh -vvv -o StrictHostKeyChecking=no \
               "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
               "powershell -Command \"cd '${{ steps.setup.outputs.app_dir }}'; git log -1 --oneline\""
           fi
