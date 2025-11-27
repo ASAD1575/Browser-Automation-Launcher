@@ -51,7 +51,6 @@ jobs:
       - name: Setup SSH and Get Credentials
         id: setup
         env:
-          # Shared secrets (same for all servers)
           SSH_USER: ${{ secrets.EC2_USERNAME }}
           APP_DIR: ${{ secrets.APP_DIRECTORY }}
           # Server-specific secrets
@@ -75,8 +74,10 @@ jobs:
             echo "$SSH_KEY_3" > ~/.ssh/deploy_key
             SSH_HOST="$SSH_HOST_3"
           fi
-          
+
           chmod 600 ~/.ssh/deploy_key
+
+          # Ensure known_hosts file exists and SSH host keys are added
           ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
           
           echo "ssh_host=$SSH_HOST" >> $GITHUB_OUTPUT
@@ -118,4 +119,3 @@ jobs:
       - name: Cleanup SSH Key
         if: always()
         run: rm -f ~/.ssh/deploy_key
-
