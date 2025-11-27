@@ -97,7 +97,7 @@ jobs:
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
-            "powershell -Command \"\$ErrorActionPreference = 'Stop'; cd '${{ steps.setup.outputs.app_dir }}'; git pull origin staging; if (\$LASTEXITCODE -ne 0) { Write-Error 'Git pull failed with exit code ' + \$LASTEXITCODE; exit \$LASTEXITCODE }\""
+            "powershell -Command \"\$ErrorActionPreference = 'Stop'; if (-not (Test-Path '${{ steps.setup.outputs.app_dir }}')) { Write-Error 'Application directory does not exist: ${{ steps.setup.outputs.app_dir }}'; exit 1 }; cd '${{ steps.setup.outputs.app_dir }}'; if (-not (Test-Path '.git')) { Write-Error 'Not a git repository. Directory exists but .git folder not found.'; exit 1 }; git pull origin staging; if (\$LASTEXITCODE -ne 0) { Write-Error \"Git pull failed with exit code \$LASTEXITCODE\"; exit \$LASTEXITCODE }\""
 
       - name: Restart Application
         run: |
@@ -105,7 +105,7 @@ jobs:
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
-            "powershell -Command \"\$ErrorActionPreference = 'Stop'; schtasks /run /tn 'BrowserAutomationStartup'; if (\$LASTEXITCODE -ne 0) { Write-Error 'Failed to restart application. Scheduled task returned exit code ' + \$LASTEXITCODE; exit \$LASTEXITCODE }\""
+            "powershell -Command \"\$ErrorActionPreference = 'Stop'; schtasks /run /tn 'BrowserAutomationStartup'; if (\$LASTEXITCODE -ne 0) { Write-Error \"Failed to restart application. Scheduled task returned exit code \$LASTEXITCODE\"; exit \$LASTEXITCODE }\""
 
       - name: Verify Deployment
         run: |
@@ -113,7 +113,7 @@ jobs:
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
-            "powershell -Command \"\$ErrorActionPreference = 'Stop'; cd '${{ steps.setup.outputs.app_dir }}'; git log -1 --oneline; if (\$LASTEXITCODE -ne 0) { Write-Error 'Failed to verify deployment. Git log returned exit code ' + \$LASTEXITCODE; exit \$LASTEXITCODE }\""
+            "powershell -Command \"\$ErrorActionPreference = 'Stop'; if (-not (Test-Path '${{ steps.setup.outputs.app_dir }}')) { Write-Error 'Application directory does not exist: ${{ steps.setup.outputs.app_dir }}'; exit 1 }; cd '${{ steps.setup.outputs.app_dir }}'; git log -1 --oneline; if (\$LASTEXITCODE -ne 0) { Write-Error \"Failed to verify deployment. Git log returned exit code \$LASTEXITCODE\"; exit \$LASTEXITCODE }\""
 
       - name: Cleanup SSH Key
         if: always()
