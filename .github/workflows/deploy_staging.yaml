@@ -42,7 +42,7 @@ jobs:
           - name: EC2-Server-3
             host_secret: EC2_HOST_3
             key_secret: EC2_SSH_PRIVATE_KEY_3
-      fail-fast: false
+      fail-fast: true
 
     steps:
       - name: Checkout code
@@ -89,7 +89,7 @@ jobs:
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
-            "powershell -Command \"\$ErrorActionPreference = 'Continue'; New-Item -ItemType File -Path '${{ steps.setup.outputs.app_dir }}\logs\STOP' -Force -ErrorAction SilentlyContinue | Out-Null; try { Stop-Process -Name python -Force -ErrorAction SilentlyContinue } catch { }; exit 0\""
+            "powershell -Command \"\$ErrorActionPreference = 'Stop'; New-Item -ItemType File -Path '${{ steps.setup.outputs.app_dir }}\logs\STOP' -Force -ErrorAction SilentlyContinue | Out-Null; \$pythonProcess = Get-Process -Name python -ErrorAction SilentlyContinue; if (\$pythonProcess) { Write-Host 'Python process found. Stopping...'; Stop-Process -Name python -Force; Write-Host 'Python process stopped successfully.' } else { Write-Error 'ERROR: Python process is not running. Cannot stop a process that does not exist.'; exit 1 }\""
 
       - name: Pull Latest Code
         run: |
@@ -97,7 +97,7 @@ jobs:
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
-            "powershell -Command \"cd '${{ steps.setup.outputs.app_dir }}'; git pull origin staging; if (\$LASTEXITCODE -ne 0) { exit \$LASTEXITCODE }\""
+            "powershell -Command \"\$ErrorActionPreference = 'Stop'; cd '${{ steps.setup.outputs.app_dir }}'; git pull origin staging; if (\$LASTEXITCODE -ne 0) { Write-Error 'Git pull failed with exit code ' + \$LASTEXITCODE; exit \$LASTEXITCODE }\""
 
       - name: Restart Application
         run: |
@@ -105,7 +105,7 @@ jobs:
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
-            "powershell -Command \"schtasks /run /tn 'BrowserAutomationStartup'; if (\$LASTEXITCODE -ne 0) { exit \$LASTEXITCODE }\""
+            "powershell -Command \"\$ErrorActionPreference = 'Stop'; schtasks /run /tn 'BrowserAutomationStartup'; if (\$LASTEXITCODE -ne 0) { Write-Error 'Failed to restart application. Scheduled task returned exit code ' + \$LASTEXITCODE; exit \$LASTEXITCODE }\""
 
       - name: Verify Deployment
         run: |
@@ -113,7 +113,7 @@ jobs:
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
-            "powershell -Command \"cd '${{ steps.setup.outputs.app_dir }}'; git log -1 --oneline; if (\$LASTEXITCODE -ne 0) { exit \$LASTEXITCODE }\""
+            "powershell -Command \"\$ErrorActionPreference = 'Stop'; cd '${{ steps.setup.outputs.app_dir }}'; git log -1 --oneline; if (\$LASTEXITCODE -ne 0) { Write-Error 'Failed to verify deployment. Git log returned exit code ' + \$LASTEXITCODE; exit \$LASTEXITCODE }\""
 
       - name: Cleanup SSH Key
         if: always()
