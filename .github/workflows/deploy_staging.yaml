@@ -76,6 +76,7 @@ jobs:
             SSH_HOST="$SSH_HOST_3"
           fi
           
+          cat ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
           
