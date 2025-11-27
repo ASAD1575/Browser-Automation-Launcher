@@ -93,7 +93,7 @@ jobs:
 
       - name: Pull Latest Code
         run: |
-          ssh -vvv-i ~/.ssh/deploy_key \
+          ssh -vvv -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
