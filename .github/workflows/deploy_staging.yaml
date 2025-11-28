@@ -98,39 +98,23 @@ jobs:
       #       "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
       #       "powershell -Command \"if (-not (Test-Path '${{ steps.setup.outputs.app_dir }}')) { Write-Error \"Application directory does not exist: ${{ steps.setup.outputs.app_dir }}\"; exit 1 }; cd '${{ steps.setup.outputs.app_dir }}'; \$oldErrorAction = \$ErrorActionPreference; \$ErrorActionPreference = 'SilentlyContinue'; \$null = git rev-parse --git-dir 2>&1; \$isGitRepo = (\$LASTEXITCODE -eq 0); \$ErrorActionPreference = \$oldErrorAction; if (-not \$isGitRepo) { Write-Error \"ERROR: Not a git repository. Directory '${{ steps.setup.outputs.app_dir }}' exists but is not a git repository. Please ensure the repository has been cloned to this location.\"; exit 1 }; \$ErrorActionPreference = 'Stop'; git pull origin staging; if (\$LASTEXITCODE -ne 0) { Write-Error \"Git pull failed with exit code \$LASTEXITCODE\"; exit \$LASTEXITCODE }\""
 
-      - name: Start Application (Run PowerShell Script Detached)
-        # UPDATED: Uses the APP_DIR variable to construct the full path to the script.
+      - name: Start Application on ${{ matrix.server.name }}
+        # Triggers the pre-existing Scheduled Task using schtasks /run via cmd.exe.
         id: start
         run: |
           USER="${{ steps.setup.outputs.ssh_user }}"
           HOST="${{ steps.setup.outputs.ssh_host }}"
-          APP_DIR="${{ steps.setup.outputs.app_dir }}"
+          TASK_NAME="BrowserAutomationStartup" # The name of the scheduled task you want to run
           
-          # Construct the path using APP_DIR
-          SCRIPT_PATH="${APP_DIR}\scripts\simple_startup.ps1" 
-          
-          echo "Attempting to run PowerShell script '${SCRIPT_PATH}' in a detached process..."
+          echo "Attempting to run existing Scheduled Task: ${TASK_NAME} via cmd.exe..."
           
           ssh -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             "${USER}@${HOST}" \
-            "powershell -Command \"
-              \$ErrorActionPreference = 'Stop';
-              \$ScriptPath = '${SCRIPT_PATH}';
-              
-              if (-not (Test-Path \$ScriptPath)) {
-                Write-Error \"❌ ERROR: Script not found at: \$ScriptPath\" -ForegroundColor Red;
-                exit 1;
-              }
-
-              # Use Start-Process to launch a new, detached PowerShell instance running the script.
-              Write-Host 'Launching new PowerShell process for script execution...' -ForegroundColor Cyan;
-              Start-Process powershell -ArgumentList '-NoProfile', '-File', \$ScriptPath;
-              
-              Write-Host 'Script launch command sent. SSH session exiting now.' -ForegroundColor Green;
-            \""
-          echo "Remote script execution command successfully initiated."
+            "cmd.exe /c \"schtasks /run /tn ${TASK_NAME}\""
+            
+          echo "Scheduled Task run command sent. The application should now be launching in a detached process."
 
       # - name: Display Startup Logs on ${{ matrix.server.name }}
       #   run: |
