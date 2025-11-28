@@ -12,10 +12,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4 # <-- Corrected syntax
 
       - name: Set up Python
-        uses: actions:setup-python@v5
+        uses: actions/setup-python@v5 # <-- Corrected syntax
         with:
           python-version: '3.12'
 
@@ -37,17 +37,17 @@ jobs:
           - name: EC2-Server-1
             host_secret: EC2_HOST_1 # Name of the secret holding the Hostname/IP
             key_secret: EC2_SSH_PRIVATE_KEY_1 # Name of the secret holding the Private Key
-          # - name: EC2-Server-2
-          #   host_secret: EC2_HOST_2
-          #   key_secret: EC2_SSH_PRIVATE_KEY_2
-          # - name: EC2-Server-3
-          #   host_secret: EC2_HOST_3
-          #   key_secret: EC2_SSH_PRIVATE_KEY_3
+          - name: EC2-Server-2
+            host_secret: EC2_HOST_2
+            key_secret: EC2_SSH_PRIVATE_KEY_2
+          - name: EC2-Server-3
+            host_secret: EC2_HOST_3
+            key_secret: EC2_SSH_PRIVATE_KEY_3
       fail-fast: false
 
     steps:
       - name: Checkout code
-        uses: actions:checkout@v4
+        uses: actions/checkout@v4 # <-- Corrected syntax
 
       - name: Setup SSH and Get Credentials (Dynamic Secret Access)
         id: setup
@@ -77,6 +77,7 @@ jobs:
 
       - name: Stop Application on ${{ matrix.server.name }}
         run: |
+          # The entire run command is wrapped in a single string for PowerShell execution via SSH
           ssh -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
