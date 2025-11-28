@@ -76,7 +76,7 @@ jobs:
           echo "app_dir=${{ env.APP_DIR }}" >> $GITHUB_OUTPUT
 
       - name: Stop Application on ${{ matrix.server.name }}
-        # Updated to use Write-Host for clearer logging
+        # Logging uses Write-Host for clearer visibility
         run: |
           echo "Stopping existing application process on server ${{ matrix.server.name }} if running..."
           USER="${{ steps.setup.outputs.ssh_user }}"
@@ -89,7 +89,7 @@ jobs:
             "powershell -Command \"\$ErrorActionPreference = 'Stop'; \$pythonProcess = Get-Process -Name python -ErrorAction SilentlyContinue; if (\$pythonProcess) { Write-Host 'Python process found. Stopping...' -ForegroundColor Yellow; Stop-Process -Name python -Force; Write-Host 'Python process stopped successfully.' -ForegroundColor Green } else { Write-Host 'INFO: Python process was not running.' -ForegroundColor Yellow }\""
 
       - name: Pull Latest Code on ${{ matrix.server.name }}
-        # Updated to use Write-Host for clearer logging
+        # Logging uses Write-Host for clearer visibility
         run: |
           USER="${{ steps.setup.outputs.ssh_user }}"
           HOST="${{ steps.setup.outputs.ssh_host }}"
@@ -155,7 +155,8 @@ jobs:
           echo "Application start command successfully executed on remote server."
 
       - name: Verify Application Process (Real-time Polling)
-        # *** FIX: Polling logic is moved to the local runner for immediate output flushing ***
+        # FIX: Using a simpler, single-line PowerShell command and explicit error handling 
+        # to prevent the "path specified" error from the non-interactive shell environment.
         run: |
           USER="${{ steps.setup.outputs.ssh_user }}"
           HOST="${{ steps.setup.outputs.ssh_host }}"
@@ -169,17 +170,21 @@ jobs:
               echo "[POLL $i/$MAX_ATTEMPTS] Waiting $WAIT_SECONDS seconds... Checking for process '${PROCESS_NAME}'..."
               sleep $WAIT_SECONDS
 
-              # Execute a new SSH command just to check the process status
+              # The remote PowerShell command is now highly simplified to just output '1' or '0'
+              # This bypasses potential issues with how complex commands are interpreted in the SSH environment.
+              # We use 'Write-Output' to guarantee clean stdout for the bash script to capture.
+              CHECK_CMD="\$ErrorActionPreference='SilentlyContinue'; if ((Get-Process -Name ${PROCESS_NAME}).Count -gt 0) { Write-Output '1' } else { Write-Output '0' }"
+
               CHECK_RESULT=$(ssh -i ~/.ssh/deploy_key \
                 -o StrictHostKeyChecking=no \
                 -o UserKnownHostsFile=~/.ssh/known_hosts \
                 "${USER}@${HOST}" \
-                "powershell -Command \"(Get-Process -Name ${PROCESS_NAME} -ErrorAction SilentlyContinue).Count\" 2>/dev/null")
+                "powershell -Command \"${CHECK_CMD}\" 2>/dev/null")
               
               # Remove any whitespace from the check result
               CHECK_RESULT=$(echo "$CHECK_RESULT" | tr -d '[:space:]')
 
-              if [ "$CHECK_RESULT" -gt 0 ]; then
+              if [ "$CHECK_RESULT" -eq 1 ]; then
                   echo "✅ Process '${PROCESS_NAME}' found running on the VM."
                   exit 0 # Success
               fi
@@ -189,7 +194,7 @@ jobs:
           exit 1
 
       - name: Verify Deployment Commit Hash on ${{ matrix.server.name }}
-        # Updated to use Write-Host for clearer logging
+        # Logging uses Write-Host for clearer visibility
         run: |
           
           USER="${{ steps.setup.outputs.ssh_user }}"
