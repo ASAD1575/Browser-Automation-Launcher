@@ -76,7 +76,7 @@ jobs:
           echo "app_dir=${{ env.APP_DIR }}" >> $GITHUB_OUTPUT
 
       - name: Stop Application on ${{ matrix.server.name }}
-        # MODIFIED: Clears the previous log file and fails if the python process is not found.
+        # MODIFIED: Added Start-Sleep to ensure file handles are released.
         run: |
           echo "Stopping existing application process on server ${{ matrix.server.name }} if running..."
           USER="${{ steps.setup.outputs.ssh_user }}"
@@ -98,7 +98,12 @@ jobs:
               if (\$pythonProcess) { 
                 Write-Host 'Python process found. Stopping...' -ForegroundColor Yellow; 
                 Stop-Process -Name python -Force; 
-                Write-Host 'Python process stopped successfully.' -ForegroundColor Green 
+                Write-Host 'Python process stopped successfully.' -ForegroundColor Green;
+                
+                # CRITICAL: Wait 5 seconds for OS to release file handles before proceeding to Git Pull
+                Write-Host 'Waiting 5 seconds for process cleanup...' -ForegroundColor Yellow;
+                Start-Sleep -Seconds 5;
+                
               } else { 
                 # If process is not found, write error and exit with code 1 (failure)
                 Write-Error 'ERROR: Python process was NOT found running. Halting deployment.' -ForegroundColor Red;
@@ -109,9 +114,6 @@ jobs:
       - name: Pull Latest Code on ${{ matrix.server.name }}
         # Logging uses Write-Host for clearer visibility
         run: |
-          echo "Sleeping 10 seconds before pulling latest code..." 
-          sleep 10
-          
           USER="${{ steps.setup.outputs.ssh_user }}"
           HOST="${{ steps.setup.outputs.ssh_host }}"
           APP_DIR="${{ steps.setup.outputs.app_dir }}"
@@ -150,7 +152,6 @@ jobs:
             \""
 
       - name: Start Application (Detached with Logging)
-        # MODIFIED: Using cmd.exe to start the process detached AND redirect stdout/stderr to a log file.
         id: start
         run: |
           USER="${{ steps.setup.outputs.ssh_user }}"
@@ -179,7 +180,6 @@ jobs:
           echo "Application start command successfully executed on remote server."
 
       - name: Display Startup Logs on ${{ matrix.server.name }}
-        # NEW STEP: Reads the log file to show the user the application's startup messages.
         run: |
           echo "Waiting 5 seconds for application to initialize and write logs..."
           sleep 5 # Give the server time to fully start and write its "running" message
@@ -219,7 +219,7 @@ jobs:
           echo "Starting real-time polling for process '${PROCESS_NAME}'..."
           
           for i in $(seq 1 $MAX_ATTEMPTS); do
-              echo "[POLL $i/$MAX_ATTEMPTS] Waiting $WAIT_SECONDS seconds... Checking for process '${PROCESS_NAME}'..."
+              echo "[POLL $i/$MAX_ATTEMPTS] Waiting $WAIT_SECONDS seconds... Checking for process '${PROCESS_NAME}'"
               sleep $WAIT_SECONDS
 
               # Use 'tasklist' and 'find' in a simple CMD command, which is more reliable than PowerShell for this simple check.
