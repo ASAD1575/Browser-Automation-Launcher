@@ -115,60 +115,60 @@ jobs:
             \$ErrorActionPreference = 'Stop';
             \$TaskName = 'BrowserAutomationStartup';
 
-            Write-Warning '--- Attempting Scheduled Task RERUN ---';
+            Write-Host '--- Attempting Scheduled Task RERUN ---';
 
             # 1. Query the task status and capture output
             \$QueryOutput = schtasks /query /tn \$TaskName /fo LIST 2>&1;
-            Write-Warning \"[QUERY OUTPUT] \$QueryOutput\";
+            Write-Host \"[QUERY OUTPUT] \$QueryOutput\";
 
             \$CurrentState = 'Unknown';
 
             if (\$QueryOutput -match 'Status:\\s+(\\w+)') {
                 \$CurrentState = \$Matches[1];
-                Write-Warning \"[STATUS CHECK] Task '\$TaskName' current status is: \$CurrentState\";
+                Write-Host \"[STATUS CHECK] Task '\$TaskName' current status is: \$CurrentState\";
             } else {
-                Write-Warning \"[STATUS CHECK] Could not determine the status of task '\$TaskName'. Proceeding...\";
+                Write-Host \"[STATUS CHECK] Could not determine the status of task '\$TaskName'. Proceeding...\";
             }
 
             # 2. Conditional actions based on status
             if (\$CurrentState -eq 'Ready') {
-                Write-Warning \"Task '\$TaskName' is READY. Running the task...\";
+                Write-Host \"Task '\$TaskName' is READY. Running the task...\";
                 \$RunOutput = schtasks /run /tn \$TaskName 2>&1;
-                Write-Warning \"[RUN OUTPUT] \$RunOutput\";
+                Write-Host \"[RUN OUTPUT] \$RunOutput\";
                 if (\$LASTEXITCODE -ne 0) {
                     Write-Error \"❌ Failed to run task '\$TaskName'. Exit code: \$LASTEXITCODE\";
                     exit 1;
                 } else {
-                    Write-Warning '✅ Task run successfully.';
+                    Write-Host '✅ Task run successfully.';
                 }
             } elseif (\$CurrentState -eq 'Running') {
-                Write-Warning \"Task '\$TaskName' is RUNNING. Ending the task...\";
+                Write-Host \"Task '\$TaskName' is RUNNING. Ending the task...\";
                 \$EndOutput = schtasks /end /tn \$TaskName 2>&1;
-                Write-Warning \"[END OUTPUT] \$EndOutput\";
+                Write-Host \"[END OUTPUT] \$EndOutput\";
                 if (\$LASTEXITCODE -ne 0) {
                     Write-Error \"❌ Failed to end task '\$TaskName'. Exit code: \$LASTEXITCODE\";
                     exit 1;
                 }
-                Write-Warning 'Task ended successfully. Waiting 30 seconds...';
+                Write-Host 'Task ended successfully. Waiting 30 seconds...';
                 Start-Sleep -Seconds 30;
-                Write-Warning 'Running the task again...';
+                Write-Host 'Running the task again...';
                 \$RunOutput = schtasks /run /tn \$TaskName 2>&1;
-                Write-Warning \"[RUN OUTPUT] \$RunOutput\";
+                Write-Host \"[RUN OUTPUT] \$RunOutput\";
                 if (\$LASTEXITCODE -ne 0) {
                     Write-Error \"❌ Failed to run task '\$TaskName'. Exit code: \$LASTEXITCODE\";
                     exit 1;
                 } else {
-                    Write-Warning '✅ Task run successfully.';
+                    Write-Host '✅ Task run successfully.';
                 }
             } else {
-                Write-Warning \"Task '\$TaskName' status is '\$CurrentState'. Proceeding to run.\";
+                Write-Host \"Task '\$TaskName' status is '\$CurrentState'. Proceeding to run.\";
                 \$RunOutput = schtasks /run /tn \$TaskName 2>&1;
-                Write-Warning \"[RUN OUTPUT] \$RunOutput\";
+                Write-Host \"[RUN OUTPUT] \$RunOutput\";
                 if (\$LASTEXITCODE -ne 0) {
                     Write-Error \"❌ Failed to run task '\$TaskName'. Exit code: \$LASTEXITCODE\";
                     exit 1;
                 } else {
-                    Write-Warning '✅ Task run successfully.';
+                    Write-Host '✅ Task run successfully.';
                 }
             }
             \""
