@@ -109,51 +109,53 @@ jobs:
 
             Write-Host '--- Restarting scheduled task ---';
 
-            # 1. Get current state via schtasks
-            \$taskText = schtasks /query /tn \$TaskName /fo LIST /v 2>\$null;
+            # 1. Query current task state
+            \$query = schtasks /query /tn \$TaskName /fo LIST /v 2>\$null;
+            if (-not \$query) {
+              Write-Error \\\"Could not query task '\$TaskName'.\\\";
+              exit 1;
+            }
+
             \$state = 'Unknown';
-            if (\$taskText -match 'State:\\s+(\\w+)') {
+            if (\$query -match 'State:\\s+(\\w+)') {
               \$state = \$Matches[1];
             }
-            Write-Host \\\"[BEFORE] Task state: \$state\\\";
+            Write-Host \\\"[STATE] Current task state: \$state\\\";
 
-            # 2. If running, try to stop first
-            if (\$state -eq 'Running') {
-              Write-Host \\\"Task is RUNNING; attempting to stop...\\\";
+            if (\$state -eq 'Ready') {
+              # Case 1: Task is ready → just run it
+              Write-Host \\\"Task is READY. Starting it now...\\\";
+              schtasks /run /tn \$TaskName | Out-Null;
+              if (\$LASTEXITCODE -ne 0) {
+                Write-Error \\\"Failed to RUN task '\$TaskName'. Exit code: \$LASTEXITCODE\\\";
+                exit 1;
+              }
+            } elseif (\$state -eq 'Running') {
+              # Case 2: Task already running → end, wait 30s, then run
+              Write-Host \\\"Task is RUNNING. Stopping it first...\\\";
               schtasks /end /tn \$TaskName 2>\$null | Out-Null;
-              Start-Sleep -Seconds 5;
-            }
-
-            # 3. Trigger the task
-            Write-Host \\\"Triggering scheduled task: '\$TaskName'...\\\";
-            schtasks /run /tn \$TaskName | Out-Null;
-            if (\$LASTEXITCODE -ne 0) {
-              Write-Error \\\"Failed to RUN scheduled task '\$TaskName'. Exit code: \$LASTEXITCODE\\\";
-              exit 1;
-            }
-
-            # 4. Poll for RUNNING state up to ~60s
-            \$started = \$false;
-            for (\$i = 0; \$i -lt 30; \$i++) {
-              Start-Sleep -Seconds 2;
-              \$pollText = schtasks /query /tn \$TaskName /fo LIST /v 2>\$null;
-              \$pollState = 'Unknown';
-              if (\$pollText -match 'State:\\s+(\\w+)') {
-                \$pollState = \$Matches[1];
+              if (\$LASTEXITCODE -ne 0) {
+                Write-Host \\\"Warning: schtasks /end returned exit code \$LASTEXITCODE (task may already be stopped).\\\";
               }
-              Write-Host \\\"[POLL \$i] Task state: \$pollState\\\";
-              if (\$pollState -eq 'Running') {
-                \$started = \$true;
-                break;
+              Write-Host 'Waiting 30 seconds before starting again...';
+              Start-Sleep -Seconds 30;
+              Write-Host 'Starting task again...';
+              schtasks /run /tn \$TaskName | Out-Null;
+              if (\$LASTEXITCODE -ne 0) {
+                Write-Error \\\"Failed to RUN task '\$TaskName' after stopping. Exit code: \$LASTEXITCODE\\\";
+                exit 1;
+              }
+            } else {
+              # Fallback: unknown state → try to run anyway
+              Write-Host \\\"Task state '\$state' is not Ready/Running. Attempting to run anyway...\\\";
+              schtasks /run /tn \$TaskName | Out-Null;
+              if (\$LASTEXITCODE -ne 0) {
+                Write-Error \\\"Failed to RUN task '\$TaskName' from state '\$state'. Exit code: \$LASTEXITCODE\\\";
+                exit 1;
               }
             }
 
-            if (-not \$started) {
-              Write-Error \\\"Task '\$TaskName' did not reach RUNNING state within timeout.\\\";
-              exit 1;
-            }
-
-            Write-Host '✅ Task reported RUNNING; restart step complete.';
+            Write-Host '✅ Task restart command(s) issued successfully.';
             \""
 
       - name: Verify Application Running Status
