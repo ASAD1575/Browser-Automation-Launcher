@@ -76,6 +76,7 @@ jobs:
           echo "app_dir=${{ env.APP_DIR }}" >> $GITHUB_OUTPUT
 
       - name: Stop Application on ${{ matrix.server.name }}
+        # This step is critical: it kills the old process before we start a new one.
         run: |
           # Use the setup outputs for connection details
           USER="${{ steps.setup.outputs.ssh_user }}"
@@ -86,10 +87,10 @@ jobs:
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             "${USER}@${HOST}" \
-            "powershell -Command \"\$ErrorActionPreference = 'Stop'; New-Item -ItemType File -Path '${APP_DIR}\logs\STOP' -Force -ErrorAction SilentlyContinue | Out-Null; \$pythonProcess = Get-Process -Name python -ErrorAction SilentlyContinue; if (\$pythonProcess) { Write-Warning 'Python process found. Stopping...'; Stop-Process -Name python -Force; Write-Warning 'Python process stopped successfully.' } else { Write-Warning 'INFO: Python process was not running.' }\""
+            "powershell -Command \"\$ErrorActionPreference = 'Stop'; \$pythonProcess = Get-Process -Name python -ErrorAction SilentlyContinue; if (\$pythonProcess) { Write-Warning 'Python process found. Stopping...'; Stop-Process -Name python -Force; Write-Warning 'Python process stopped successfully.' } else { Write-Warning 'INFO: Python process was not running.' }\""
 
       - name: Pull Latest Code on ${{ matrix.server.name }}
-        # *** FIX: Use explicit path for git executable to avoid PATH issues over SSH ***
+        # Use explicit path for git executable for robustness.
         run: |
           # Use the setup outputs for connection details
           USER="${{ steps.setup.outputs.ssh_user }}"
@@ -131,7 +132,7 @@ jobs:
             \""
 
       - name: Restart Application and Verify Success on ${{ matrix.server.name }}
-        # This step remains the same as it does not rely on git, only schtasks and process polling.
+        # *** MAJOR CHANGE: Bypassing schtasks /run and using Start-Process directly for non-blocking execution ***
         run: |
           # Use the setup outputs for connection details
           USER="${{ steps.setup.outputs.ssh_user }}"
@@ -144,38 +145,26 @@ jobs:
             "${USER}@${HOST}" \
             "powershell -Command \"
             \$ErrorActionPreference = 'Stop';
-            \$TaskName = 'BrowserAutomationStartup';
             \$MaxAttempts = 12; # Max wait time of 12 * 5 = 60 seconds
             \$WaitSeconds = 5;
-            \$ProcessName = 'python'; # Replace with your actual process name if different (e.g., 'java', 'node')
-
-            Write-Warning '--- Attempting Robust Scheduled Task RERUN (Start/Stop) ---';
+            \$ProcessName = 'python'; # Replace with your actual process name if different
             
-            # 1. Query and STOP if running
-            Write-Warning 'Querying task status...';
-            \$QueryOutput = schtasks /query /tn \$TaskName /fo LIST /v 2>&1 | Out-String; 
-            if (\$QueryOutput -match 'State:\\s+Running') {
-                Write-Warning \"Task '\$TaskName' is RUNNING. Stopping it...\";
-                schtasks /end /tn \$TaskName 2>&1 | Out-String; 
-                if (\$LASTEXITCODE -ne 0) {
-                    Write-Error \"❌ Failed to STOP task '\$TaskName'. Exit code: \$LASTEXITCODE\"; 
-                    exit 1;
-                }
-                Write-Warning 'Task stopped successfully. Waiting 10 seconds for process teardown...';
-                Start-Sleep -Seconds 10; 
-            }
+            # --- 1. DIRECT APPLICATION START (Non-Blocking) ---
+            Write-Warning '--- Attempting DIRECT, NON-BLOCKING Application START via Start-Process ---';
 
-            # 2. Run the task
-            Write-Warning \"Attempting to run scheduled task: \$TaskName...\";
-            schtasks /run /tn \$TaskName 2>&1 | Out-String;
-
-            if (\$LASTEXITCODE -ne 0) {
-                Write-Error \"❌ Failed to TRIGGER scheduled task '\$TaskName'. Schtasks returned exit code \$LASTEXITCODE\";
-                exit 1;
-            }
-            Write-Warning 'Scheduled task trigger command accepted. Starting polling for application process...';
+            # Find the python executable path (assuming it's in the PATH or the environment where the SSH user is running)
+            # You might need to replace 'python.exe' with the absolute path if it is not in the PATH.
+            \$PythonPath = 'python'; 
+            \$ScriptPath = '${APP_DIR}\main.py';
             
-            # 3. Polling loop to verify Python process start
+            # Start the process detached.
+            # -NoNewWindow prevents a visible console from opening.
+            # -PassThru returns the process object, but since we are not capturing it, it effectively runs detached.
+            Start-Process -FilePath \$PythonPath -ArgumentList \$ScriptPath -WorkingDirectory '${APP_DIR}' -NoNewWindow;
+
+            Write-Warning 'Application started via Start-Process. Starting polling for process verification...';
+
+            # --- 2. Polling loop to verify Python process start ---
             for (\$i = 1; \$i -le \$MaxAttempts; \$i++) {
                 Write-Warning \"[POLL \`$i/\`$MaxAttempts] Waiting \`$WaitSeconds seconds... Checking for process '\$ProcessName'...\";
                 Start-Sleep -Seconds \$WaitSeconds;
@@ -186,18 +175,6 @@ jobs:
                     Write-Warning \"✅ Process '\$ProcessName' found running on the VM.\";
                     exit 0; # Success
                 }
-                
-                # Also check the schtasks last run result in case the process fails instantly
-                \$TaskInfo = schtasks /query /tn \$TaskName /fo LIST /v 2>&1 | Out-String;
-                \$LastRunResult = \$null;
-                if (\$TaskInfo -match 'Last Run Result:\\s+(\\d+)') {
-                    \$LastRunResult = [int]\$Matches[1];
-                }
-
-                if (\$LastRunResult -ne \$null -and \$LastRunResult -ne 0 -and \$LastRunResult -ne 1 -and \$LastRunResult -ne 2) {
-                    Write-Error \"❌ TASK FAILED INSTANTLY: Last Run Result is '\$LastRunResult'. Check the Task Scheduler history on the VM for details.\";
-                    exit 1;
-                }
             }
 
             Write-Error \"❌ TIMEOUT: Application process '\$ProcessName' not found running after \$((\$MaxAttempts * \$WaitSeconds)) seconds.\";
@@ -205,7 +182,7 @@ jobs:
             \""
 
       - name: Verify Deployment Commit Hash on ${{ matrix.server.name }}
-        # *** FIX: Use explicit path for git executable to avoid PATH issues over SSH ***
+        # This step verifies the code commit, which is good practice.
         run: |
           # Use the setup outputs for connection details
           USER="${{ steps.setup.outputs.ssh_user }}"
