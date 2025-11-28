@@ -36,12 +36,12 @@ jobs:
           - name: EC2-Server-1
             host_secret: EC2_HOST_1
             key_secret: EC2_SSH_PRIVATE_KEY_1
-          - name: EC2-Server-2
-            host_secret: EC2_HOST_2
-            key_secret: EC2_SSH_PRIVATE_KEY_2
-          - name: EC2-Server-3
-            host_secret: EC2_HOST_3
-            key_secret: EC2_SSH_PRIVATE_KEY_3
+          # - name: EC2-Server-2
+          #   host_secret: EC2_HOST_2
+          #   key_secret: EC2_SSH_PRIVATE_KEY_2
+          # - name: EC2-Server-3
+          #   host_secret: EC2_HOST_3
+          #   key_secret: EC2_SSH_PRIVATE_KEY_3
       fail-fast: false
 
     steps:
