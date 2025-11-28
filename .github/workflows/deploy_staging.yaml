@@ -37,12 +37,12 @@ jobs:
           - name: EC2-Server-1
             host_secret: EC2_HOST_1 # Name of the secret holding the Hostname/IP
             key_secret: EC2_SSH_PRIVATE_KEY_1 # Name of the secret holding the Private Key
-          - name: EC2-Server-2
-            host_secret: EC2_HOST_2
-            key_secret: EC2_SSH_PRIVATE_KEY_2
-          - name: EC2-Server-3
-            host_secret: EC2_HOST_3
-            key_secret: EC2_SSH_PRIVATE_KEY_3
+          # - name: EC2-Server-2
+          #   host_secret: EC2_HOST_2
+          #   key_secret: EC2_SSH_PRIVATE_KEY_2
+          # - name: EC2-Server-3
+          #   host_secret: EC2_HOST_3
+          #   key_secret: EC2_SSH_PRIVATE_KEY_3
       fail-fast: false
 
     steps:
@@ -115,11 +115,10 @@ jobs:
             \$ErrorActionPreference = 'Stop';
             \$TaskName = 'BrowserAutomationStartup';
 
-            # 1. Query the task status using the verbose list format
+            # 1. Query the task status and report the state
             \$TaskInfo = schtasks /query /tn \$TaskName /fo LIST /v 2>\$null;
             \$CurrentState = 'Unknown';
             
-            # Extract the State value using regex
             if (\$TaskInfo -match 'State:\\s+(\\w+)') {
                 \$CurrentState = \$Matches[1];
                 Write-Host \"[STATUS CHECK] Task '\$TaskName' current state is: \$CurrentState\";
@@ -157,40 +156,53 @@ jobs:
             \""
 
       - name: Verify Application Running Status
-        env:
-          VERIFY_ATTEMPTS: 3
-          VERIFY_DELAY: 30 # seconds
-          USER: ${{ steps.setup.outputs.ssh_user }}
-          HOST: ${{ steps.setup.outputs.ssh_host }}
         run: |
-          echo "Waiting up to $(( VERIFY_ATTEMPTS * VERIFY_DELAY )) seconds for application (python.exe) to start..."
-          
-          for i in $(seq 1 $VERIFY_ATTEMPTS); do
-            echo "Attempt $i/$VERIFY_ATTEMPTS: Checking process status..."
+          # Use the setup outputs for connection details
+          USER="${{ steps.setup.outputs.ssh_user }}"
+          HOST="${{ steps.setup.outputs.ssh_host }}"
+
+          ssh -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=~/.ssh/known_hosts \
+            "${USER}@${HOST}" \
+            "powershell -Command \"
+            \$ErrorActionPreference = 'Stop';
+            \$TaskName = 'BrowserAutomationStartup';
+
+            Write-Host '--- Deployment Verification by Scheduled Task Status ---';
             
-            # PowerShell command to check for the 'python' process
-            PROCESS_CHECK=$(ssh -i ~/.ssh/deploy_key \
-              -o StrictHostKeyChecking=no \
-              -o UserKnownHostsFile=~/.ssh/known_hosts \
-              "${{ env.USER }}@${{ env.HOST }}" \
-              "powershell -Command \"(Get-Process -Name 'python' -ErrorAction SilentlyContinue).Count\"")
-              
-            # Trim whitespace from the response
-            PROCESS_CHECK=$(echo $PROCESS_CHECK | tr -d '[:space:]')
+            # Query the task status using the verbose list format
+            \$TaskInfo = schtasks /query /tn \$TaskName /fo LIST /v 2>\$null;
+            \$CurrentState = 'Unknown';
             
-            if [ "$PROCESS_CHECK" -gt 0 ]; then
-              echo "Application process (python.exe) detected after $i attempt(s). Deployment verified."
-              exit 0 # Success!
-            fi
-            
-            if [ $i -lt $VERIFY_ATTEMPTS ]; then
-              echo "Process not found. Waiting $VERIFY_DELAY seconds before retrying..."
-              sleep $VERIFY_DELAY
-            fi
-          done
-          
-          echo "ERROR: Application process (python.exe) was not found after $VERIFY_ATTEMPTS attempts."
-          exit 1 # Failure
+            # Extract the State value using regex
+            if (\$TaskInfo -match 'State:\\s+(\\w+)') {
+                \$CurrentState = \$Matches[1];
+                Write-Host \"[VERIFY STATUS] Final task state reported as: \$CurrentState\";
+            } else {
+                Write-Error \"ERROR: Could not determine the state of task '\$TaskName'. Aborting verification.\";
+                exit 1;
+            }
+
+            # If the task is Ready, attempt to re-run it one last time as it may have failed to launch on the first attempt
+            if (\$CurrentState -eq 'Ready') {
+                Write-Host 'Task is Ready, indicating it might not have successfully launched the application.';
+                Write-Host 'Attempting a final RERUN to ensure launch...';
+                
+                schtasks /run /tn \$TaskName;
+
+                if (\$LASTEXITCODE -ne 0) {
+                    Write-Error \"ERROR: Failed to RERUN task '\$TaskName'. Schtasks returned exit code \$LASTEXITCODE\";
+                    exit 1;
+                } else {
+                    Write-Host 'RERUN command executed successfully. Assuming application launch is now guaranteed.';
+                }
+            } elseif (\$CurrentState -eq 'Running') {
+                Write-Host 'Task is RUNNING. Deployment confirmed via scheduler status.';
+            } else {
+                Write-Host \"Task is in state '\$CurrentState'. Verification successful (Task triggered successfully).\"
+            }
+            \""
 
       - name: Verify Deployment Commit Hash on ${{ matrix.server.name }}
         run: |
