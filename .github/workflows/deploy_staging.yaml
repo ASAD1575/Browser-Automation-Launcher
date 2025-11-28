@@ -88,7 +88,18 @@ jobs:
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             "${USER}@${HOST}" \
-            "powershell -Command \"\$ErrorActionPreference = 'Stop'; \$pythonProcess = Get-Process -Name python -ErrorAction SilentlyContinue; if (\$pythonProcess) { Write-Warning 'Python process found. Stopping...'; New-Item -ItemType File -Path '${{ steps.setup.outputs.app_dir }}\logs\STOP'; Stop-Process -Name python -Force; Write-Warning 'Python process stopped successfully.' } else { Write-Warning 'INFO: Python process was not running.' }\""
+            powershell -Command "\
+              \$ErrorActionPreference = 'Stop'; \
+              \$pythonProcess = Get-Process -Name python -ErrorAction SilentlyContinue; \
+              if (\$pythonProcess) { \
+                Write-Warning 'Python process found. Stopping...'; \
+                New-Item -ItemType File -Path '${{ steps.setup.outputs.app_dir }}\logs\STOP' -Force | Out-Null; \
+                Stop-Process -Name python -Force; \
+                Write-Warning 'Python process stopped successfully.'; \
+                exit 1; \
+              } else { \
+                Write-Warning 'INFO: Python process was not running.'; \
+              }"
 
       - name: Pull Latest Code on ${{ matrix.server.name }}
         run: |
@@ -117,33 +128,6 @@ jobs:
             "cmd.exe /c \"schtasks /run /tn ${TASK_NAME}\""
             
           echo "Scheduled Task run command sent. The application should now be launching in a detached process."
-
-      - name: Display Startup Logs on ${{ matrix.server.name }}
-        run: |
-          echo "Waiting 5 seconds for application to initialize and write logs..."
-          sleep 5 # Give the server time to fully start and write its "running" message
-          
-          USER="${{ steps.setup.outputs.ssh_user }}"
-          HOST="${{ steps.setup.outputs.ssh_host }}"
-          APP_DIR="${{ steps.setup.outputs.app_dir }}"
-          
-          echo "Fetching last 20 lines of application logs..."
-          
-          ssh -i ~/.ssh/deploy_key \
-            -o StrictHostKeyChecking=no \
-            -o UserKnownHostsFile=~/.ssh/known_hosts \
-            "${USER}@${HOST}" \
-            "powershell -Command \"
-              \$LogFile = '${APP_DIR}\startup.log';
-              if (Test-Path \$LogFile) {
-                Write-Host '--- START OF APPLICATION LOG ---' -ForegroundColor Blue
-                Get-Content \$LogFile -Tail 20
-                Write-Host '--- END OF APPLICATION LOG ---' -ForegroundColor Blue
-              } else {
-                Write-Warning 'WARNING: Log file not found at \$LogFile.' -ForegroundColor Yellow
-              }
-            \""
-          echo "Log display complete."
 
       - name: Verify Application Process (Real-time Polling)
         # Fixes from last turn included: use robust 'tasklist' and '|| true' for retry logic.
