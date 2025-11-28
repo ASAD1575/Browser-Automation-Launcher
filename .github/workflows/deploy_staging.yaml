@@ -86,7 +86,7 @@ jobs:
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             "${USER}@${HOST}" \
-            "powershell -Command \"\$ErrorActionPreference = 'Stop'; New-Item -ItemType File -Path '${APP_DIR}\logs\STOP' -Force -ErrorAction SilentlyContinue | Out-Null; \$pythonProcess = Get-Process -Name python -ErrorAction SilentlyContinue; if (\$pythonProcess) { Write-Output 'Python process found. Stopping...'; Stop-Process -Name python -Force; Write-Output 'Python process stopped successfully.' } else { Write-Output 'INFO: Python process was not running.' }\""
+            "powershell -Command \"\$ErrorActionPreference = 'Stop'; New-Item -ItemType File -Path '${APP_DIR}\logs\STOP' -Force -ErrorAction SilentlyContinue | Out-Null; \$pythonProcess = Get-Process -Name python -ErrorAction SilentlyContinue; if (\$pythonProcess) { Write-Warning 'Python process found. Stopping...'; Stop-Process -Name python -Force; Write-Warning 'Python process stopped successfully.' } else { Write-Warning 'INFO: Python process was not running.' }\""
 
       - name: Pull Latest Code on ${{ matrix.server.name }}
         run: |
@@ -99,7 +99,7 @@ jobs:
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             "${USER}@${HOST}" \
-            "powershell -Command \"if (-not (Test-Path '${APP_DIR}')) { Write-Error \"Application directory does not exist: ${APP_DIR}\"; exit 1 }; cd '${APP_DIR}'; \$oldErrorAction = \$ErrorActionPreference; \$ErrorActionPreference = 'SilentlyContinue'; \$null = git rev-parse --git-dir 2>&1; \$isGitRepo = (\$LASTEXITCODE -eq 0); \$ErrorActionPreference = \$oldErrorAction; if (-not \$isGitRepo) { Write-Error \"ERROR: Not a git repository. Directory '${APP_DIR}' exists but is not a git repository. Please ensure the repository has been cloned to this location.\"; exit 1 }; \$ErrorActionPreference = 'Stop'; git pull origin staging; if (\$LASTEXITCODE -ne 0) { Write-Error \"Git pull failed with exit code \$LASTEXITCODE\"; exit \$LASTEXITCODE }\""
+            "powershell -Command \"if (-not (Test-Path '${APP_DIR}')) { Write-Error \"Application directory does not exist: ${APP_DIR}\"; exit 1 }; cd '${APP_DIR}'; \$oldErrorAction = \$ErrorActionPreference; \$ErrorActionPreference = 'SilentlyContinue'; \$null = git rev-parse --git-dir 2>&1; \$isGitRepo = (\$LASTEXITCODE -eq 0); \$ErrorActionPreference = \$oldErrorAction; if (-not \$isGitRepo) { Write-Error \"ERROR: Not a git repository. Directory '${APP_DIR}' exists but is not a git repository. Please ensure the repository has been cloned to this location.\"; exit 1 }; \$ErrorActionPreference = 'Stop'; Write-Warning 'Pulling latest code from staging branch...'; git pull origin staging; if (\$LASTEXITCODE -ne 0) { Write-Error \"Git pull failed with exit code \$LASTEXITCODE\"; exit \$LASTEXITCODE } else { Write-Warning 'Code pull successful.' }\""
 
       - name: Restart Application on ${{ matrix.server.name }}
         run: |
@@ -115,43 +115,45 @@ jobs:
             \$ErrorActionPreference = 'Stop';
             \$TaskName = 'BrowserAutomationStartup';
 
+            Write-Warning '--- Attempting Scheduled Task RERUN ---';
+            
             # 1. Query the task status and report the state
             \$TaskInfo = schtasks /query /tn \$TaskName /fo LIST /v 2>\$null;
             \$CurrentState = 'Unknown';
             
             if (\$TaskInfo -match 'State:\\s+(\\w+)') {
                 \$CurrentState = \$Matches[1];
-                Write-Output \"[STATUS CHECK] Task '\$TaskName' current state is: \$CurrentState\";
+                Write-Warning \"[STATUS CHECK] Task '\$TaskName' current state is: \$CurrentState\";
             } else {
-                Write-Output \"[STATUS CHECK] Could not explicitly determine the state of task '\$TaskName'. Proceeding...\";
+                Write-Warning \"[STATUS CHECK] Could not determine the state of task '\$TaskName'. Proceeding...\";
             }
 
             # 2. Conditional Stop if Running
             if (\$CurrentState -eq 'Running') {
-                Write-Output \"Task '\$TaskName' is RUNNING. Attempting to stop it first...\";
+                Write-Warning \"Task '\$TaskName' is RUNNING. Attempting to stop it first...\";
                 
                 schtasks /end /tn \$TaskName;
                 if (\$LASTEXITCODE -ne 0) {
-                    Write-Error \"Failed to STOP task '\$TaskName'. Exit code: \$LASTEXITCODE\"; 
+                    Write-Error \"❌ Failed to STOP task '\$TaskName'. Exit code: \$LASTEXITCODE\"; 
                     exit 1;
                 }
-                Write-Output \"Task '\$TaskName' stopped successfully. Waiting 5 seconds for cleanup...\";
+                Write-Warning \"Task '\$TaskName' stopped successfully. Waiting 5 seconds for cleanup...\";
                 Start-Sleep -Seconds 5; 
             } elseif (\$CurrentState -eq 'Ready') {
-                Write-Output \"Task '\$TaskName' is READY. Proceeding directly to run.\";
+                Write-Warning \"Task '\$TaskName' is READY. Proceeding directly to run.\";
             } else {
-                Write-Output \"Task '\$TaskName' state is '\$CurrentState'. Proceeding to run.\";
+                Write-Warning \"Task '\$TaskName' state is '\$CurrentState'. Proceeding to run.\";
             }
 
             # 3. Rerun the task
-            Write-Output \"Attempting to run scheduled task: \$TaskName...\";
+            Write-Warning \"Attempting to run scheduled task: \$TaskName...\";
             schtasks /run /tn \$TaskName;
 
             if (\$LASTEXITCODE -ne 0) {
-                Write-Error \"Failed to TRIGGER scheduled task '\$TaskName'. Schtasks returned exit code \$LASTEXITCODE\";
+                Write-Error \"❌ Failed to TRIGGER scheduled task '\$TaskName'. Schtasks returned exit code \$LASTEXITCODE\";
                 exit 1;
             } else {
-                Write-Output 'Scheduled task trigger command executed successfully.'
+                Write-Warning '✅ Scheduled task trigger command executed successfully.'
             }
             \""
 
@@ -169,7 +171,7 @@ jobs:
             \$ErrorActionPreference = 'Stop';
             \$TaskName = 'BrowserAutomationStartup';
 
-            Write-Output '--- Deployment Verification by Scheduled Task Status ---';
+            Write-Warning '--- Deployment Verification by Scheduled Task Status ---';
             
             # Query the task status using the verbose list format
             \$TaskInfo = schtasks /query /tn \$TaskName /fo LIST /v 2>\$null;
@@ -178,7 +180,7 @@ jobs:
             # Extract the State value using regex
             if (\$TaskInfo -match 'State:\\s+(\\w+)') {
                 \$CurrentState = \$Matches[1];
-                Write-Output \"[VERIFY STATUS] Final task state reported as: \$CurrentState\";
+                Write-Warning \"[VERIFY STATUS] Final task state reported as: \$CurrentState\";
             } else {
                 Write-Error \"❌ ERROR: Could not determine the state of task '\$TaskName'. Aborting verification.\";
                 exit 1;
@@ -186,8 +188,8 @@ jobs:
 
             # If the task is Ready, attempt to re-run it one last time as it may have failed to launch on the first attempt
             if (\$CurrentState -eq 'Ready') {
-                Write-Output 'Task is Ready, indicating it might not have successfully launched the application.';
-                Write-Output 'Attempting a final RERUN to ensure launch...';
+                Write-Warning 'Task is Ready, indicating it might not have successfully launched the application.';
+                Write-Warning 'Attempting a final RERUN to ensure launch...';
                 
                 schtasks /run /tn \$TaskName;
 
@@ -195,12 +197,12 @@ jobs:
                     Write-Error \"❌ ERROR: Failed to RERUN task '\$TaskName'. Schtasks returned exit code \$LASTEXITCODE\";
                     exit 1;
                 } else {
-                    Write-Output '✅ RERUN command executed successfully. Assuming application launch is now guaranteed.';
+                    Write-Warning '✅ RERUN command executed successfully. Assuming application launch is now guaranteed.';
                 }
             } elseif (\$CurrentState -eq 'Running') {
-                Write-Output '✅ Task is RUNNING. Deployment confirmed via scheduler status.';
+                Write-Warning '✅ Task is RUNNING. Deployment confirmed via scheduler status.';
             } else {
-                Write-Output \"✅ Task is in state '\$CurrentState'. Verification successful (Task triggered successfully).\"
+                Write-Warning \"✅ Task is in state '\$CurrentState'. Verification successful (Task triggered successfully).\"
             }
             \""
 
@@ -215,7 +217,7 @@ jobs:
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             "${USER}@${HOST}" \
-            "powershell -Command \"if (-not (Test-Path '${APP_DIR}')) { Write-Error \"Application directory does not exist: ${APP_DIR}\"; exit 1 }; cd '${APP_DIR}'; \$oldErrorAction = \$ErrorActionPreference; \$ErrorActionPreference = 'SilentlyContinue'; \$null = git rev-parse --git-dir 2>&1; \$isGitRepo = (\$LASTEXITCODE -eq 0); \$ErrorActionPreference = \$oldErrorAction; if (-not \$isGitRepo) { Write-Error \"ERROR: Not a git repository. Directory '${APP_DIR}' exists but is not a git repository. Please ensure the repository has been cloned to this location.\"; exit 1 }; \$ErrorActionPreference = 'Stop'; Write-Output 'Current Commit Hash: '; git log -1 --oneline; if (\$LASTEXITCODE -ne 0) { Write-Error \"Failed to verify deployment. Git log returned exit code \$LASTEXITCODE\"; exit \$LASTEXITCODE }\""
+            "powershell -Command \"if (-not (Test-Path '${APP_DIR}')) { Write-Error \"Application directory does not exist: ${APP_DIR}\"; exit 1 }; cd '${APP_DIR}'; \$oldErrorAction = \$ErrorActionPreference; \$ErrorActionPreference = 'SilentlyContinue'; \$null = git rev-parse --git-dir 2>&1; \$isGitRepo = (\$LASTEXITCODE -eq 0); \$ErrorActionPreference = \$oldErrorAction; if (-not \$isGitRepo) { Write-Error \"ERROR: Not a git repository. Directory '${APP_DIR}' exists but is not a git repository. Please ensure the repository has been cloned to this location.\"; exit 1 }; \$ErrorActionPreference = 'Stop'; Write-Warning 'Current Commit Hash: '; git log -1 --oneline | Out-String; if (\$LASTEXITCODE -ne 0) { Write-Error \"Failed to verify deployment. Git log returned exit code \$LASTEXITCODE\"; exit \$LASTEXITCODE }\""
 
       - name: Cleanup SSH Key
         if: always()
