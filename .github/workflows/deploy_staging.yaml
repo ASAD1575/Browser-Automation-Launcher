@@ -54,24 +54,34 @@ jobs:
           # Shared secrets (same for all servers)
           SSH_USER: ${{ secrets.EC2_USERNAME }}
           APP_DIR: ${{ secrets.APP_DIRECTORY }}
-          # Dynamic secret access: Use the value of the matrix property (e.g., 'EC2_HOST_1') 
-          # as the key to look up the actual secret value in the 'secrets' context.
-          SSH_KEY: ${{ secrets[matrix.server.key_secret] }}
-          SSH_HOST: ${{ secrets[matrix.server.host_secret] }}
+          # Server-specific secrets
+          SSH_KEY_1: ${{ secrets.EC2_SSH_PRIVATE_KEY_1 }}
+          SSH_KEY_2: ${{ secrets.EC2_SSH_PRIVATE_KEY_2 }}
+          SSH_KEY_3: ${{ secrets.EC2_SSH_PRIVATE_KEY_3 }}
+          SSH_HOST_1: ${{ secrets.EC2_HOST_1 }}
+          SSH_HOST_2: ${{ secrets.EC2_HOST_2 }}
+          SSH_HOST_3: ${{ secrets.EC2_HOST_3 }}
         run: |
           mkdir -p ~/.ssh
           
-          # Write the private key to a file using the dynamically fetched secret
-          echo "${{ env.SSH_KEY }}" > ~/.ssh/deploy_key
+          # Determine which host and key to use based on matrix server name
+          if [ "${{ matrix.server.name }}" == "EC2-Server-1" ]; then
+            echo "$SSH_KEY_1" > ~/.ssh/deploy_key
+            SSH_HOST="$SSH_HOST_1"
+          elif [ "${{ matrix.server.name }}" == "EC2-Server-2" ]; then
+            echo "$SSH_KEY_2" > ~/.ssh/deploy_key
+            SSH_HOST="$SSH_HOST_2"
+          elif [ "${{ matrix.server.name }}" == "EC2-Server-3" ]; then
+            echo "$SSH_KEY_3" > ~/.ssh/deploy_key
+            SSH_HOST="$SSH_HOST_3"
+          fi
+          
           chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
           
-          # Scan the host using the dynamically fetched host secret value
-          ssh-keyscan -H "${{ env.SSH_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
-          
-          # Set outputs for subsequent steps
-          echo "ssh_host=${{ env.SSH_HOST }}" >> $GITHUB_OUTPUT
-          echo "ssh_user=${{ env.SSH_USER }}" >> $GITHUB_OUTPUT
-          echo "app_dir=${{ env.APP_DIR }}" >> $GITHUB_OUTPUT
+          echo "ssh_host=$SSH_HOST" >> $GITHUB_OUTPUT
+          echo "ssh_user=$SSH_USER" >> $GITHUB_OUTPUT
+          echo "app_dir=$APP_DIR" >> $GITHUB_OUTPUT
 
       - name: Stop Application
         run: |
@@ -82,8 +92,6 @@ jobs:
             "powershell -Command \"\$ErrorActionPreference = 'Stop'; New-Item -ItemType File -Path '${{ steps.setup.outputs.app_dir }}\logs\STOP' -Force -ErrorAction SilentlyContinue | Out-Null; \$pythonProcess = Get-Process -Name python -ErrorAction SilentlyContinue; if (\$pythonProcess) { Write-Host 'Python process found. Stopping...'; Stop-Process -Name python -Force; Write-Host 'Python process stopped successfully.' } else { Write-Error 'ERROR: Python process is not running. Cannot stop a process that does not exist.'; exit 1 }\""
 
       - name: Pull Latest Code
-        # This step remains robust: it checks for the directory, verifies it's a Git repo,
-        # performs the git pull origin staging via PowerShell, and checks the exit code.
         run: |
           ssh -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=no \
