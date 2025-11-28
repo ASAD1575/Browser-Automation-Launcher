@@ -56,11 +56,11 @@ jobs:
           APP_DIR: ${{ secrets.APP_DIRECTORY }}
           # Server-specific secrets
           SSH_KEY_1: ${{ secrets.EC2_SSH_PRIVATE_KEY_1 }}
-          SSH_KEY_2: ${{ secrets.EC2_SSH_PRIVATE_KEY_2 }}
-          SSH_KEY_3: ${{ secrets.EC2_SSH_PRIVATE_KEY_3 }}
+          # SSH_KEY_2: ${{ secrets.EC2_SSH_PRIVATE_KEY_2 }}
+          # SSH_KEY_3: ${{ secrets.EC2_SSH_PRIVATE_KEY_3 }}
           SSH_HOST_1: ${{ secrets.EC2_HOST_1 }}
-          SSH_HOST_2: ${{ secrets.EC2_HOST_2 }}
-          SSH_HOST_3: ${{ secrets.EC2_HOST_3 }}
+          # SSH_HOST_2: ${{ secrets.EC2_HOST_2 }}
+          # SSH_HOST_3: ${{ secrets.EC2_HOST_3 }}
         run: |
           mkdir -p ~/.ssh
           
