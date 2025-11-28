@@ -37,12 +37,12 @@ jobs:
           - name: EC2-Server-1
             host_secret: EC2_HOST_1 # Name of the secret holding the Hostname/IP
             key_secret: EC2_SSH_PRIVATE_KEY_1 # Name of the secret holding the Private Key
-          - name: EC2-Server-2
-            host_secret: EC2_HOST_2
-            key_secret: EC2_SSH_PRIVATE_KEY_2
-          - name: EC2-Server-3
-            host_secret: EC2_HOST_3
-            key_secret: EC2_SSH_PRIVATE_KEY_3
+          # - name: EC2-Server-2
+          #   host_secret: EC2_HOST_2
+          #   key_secret: EC2_SSH_PRIVATE_KEY_2
+          # - name: EC2-Server-3
+          #   host_secret: EC2_HOST_3
+          #   key_secret: EC2_SSH_PRIVATE_KEY_3
       fail-fast: false
 
     steps:
@@ -111,12 +111,46 @@ jobs:
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             "${USER}@${HOST}" \
-            "powershell -Command \"\$ErrorActionPreference = 'Stop'; Write-Host 'Attempting to run scheduled task: BrowserAutomationStartup...'; schtasks /run /tn 'BrowserAutomationStartup'; if (\$LASTEXITCODE -ne 0) { Write-Error \"Failed to trigger scheduled task. Schtasks returned exit code \$LASTEXITCODE\"; exit \$LASTEXITCODE } else { Write-Host 'Scheduled task trigger command executed successfully.' }\""
+            "powershell -Command \"
+            \$ErrorActionPreference = 'Stop';
+            \$TaskName = 'BrowserAutomationStartup';
+
+            # 1. Check current status for 'Running' state
+            \$TaskInfo = schtasks /query /tn \$TaskName /fo LIST /v 2>\$null;
+
+            if (\$TaskInfo -match 'State:\\s+Running') {
+                Write-Host \"Task '\$TaskName' is currently RUNNING. Attempting to stop it...\";
+                
+                # 2. Stop the running task
+                schtasks /end /tn \$TaskName;
+                if (\$LASTEXITCODE -ne 0) {
+                    Write-Error \"Failed to STOP task '\$TaskName'. Exit code: \$LASTEXITCODE\"; 
+                    exit 1;
+                }
+                Write-Host \"Task '\$TaskName' stopped successfully. Waiting 5 seconds...\";
+                
+                # Give it a moment to clear the state
+                Start-Sleep -Seconds 5; 
+            } else {
+                Write-Host \"Task '\$TaskName' is not currently running. Proceeding to run.\";
+            }
+
+            # 3. Rerun the task
+            Write-Host \"Attempting to run scheduled task: \$TaskName...\";
+            schtasks /run /tn \$TaskName;
+
+            if (\$LASTEXITCODE -ne 0) {
+                Write-Error \"Failed to TRIGGER scheduled task '\$TaskName'. Schtasks returned exit code \$LASTEXITCODE\";
+                exit 1;
+            } else {
+                Write-Host 'Scheduled task trigger command executed successfully.'
+            }
+            \""
 
       - name: Verify Application Running Status
         env:
           VERIFY_ATTEMPTS: 3
-          VERIFY_DELAY: 10 # seconds
+          VERIFY_DELAY: 30 # seconds
           USER: ${{ steps.setup.outputs.ssh_user }}
           HOST: ${{ steps.setup.outputs.ssh_host }}
         run: |
