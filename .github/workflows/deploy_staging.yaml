@@ -76,7 +76,7 @@ jobs:
           echo "app_dir=${{ env.APP_DIR }}" >> $GITHUB_OUTPUT
 
       - name: Stop Application on ${{ matrix.server.name }}
-        # Logging uses Write-Host for clearer visibility
+        # MODIFIED: Now fails the job if the Python process is not found.
         run: |
           echo "Stopping existing application process on server ${{ matrix.server.name }} if running..."
           USER="${{ steps.setup.outputs.ssh_user }}"
@@ -86,7 +86,20 @@ jobs:
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             "${USER}@${HOST}" \
-            "powershell -Command \"\$ErrorActionPreference = 'Stop'; \$pythonProcess = Get-Process -Name python -ErrorAction SilentlyContinue; if (\$pythonProcess) { Write-Host 'Python process found. Stopping...' -ForegroundColor Yellow; Stop-Process -Name python -Force; Write-Host 'Python process stopped successfully.' -ForegroundColor Green } else { Write-Host 'INFO: Python process was not running.' -ForegroundColor Yellow }\""
+            "powershell -Command \"
+              \$ErrorActionPreference = 'Stop'; 
+              \$pythonProcess = Get-Process -Name python -ErrorAction SilentlyContinue; 
+              
+              if (\$pythonProcess) { 
+                Write-Host 'Python process found. Stopping...' -ForegroundColor Yellow; 
+                Stop-Process -Name python -Force; 
+                Write-Host 'Python process stopped successfully.' -ForegroundColor Green 
+              } else { 
+                # If process is not found, write error and exit with code 1 (failure)
+                Write-Error 'ERROR: Python process was NOT found running. Halting deployment.' -ForegroundColor Red;
+                exit 1;
+              }
+            \""
 
       - name: Pull Latest Code on ${{ matrix.server.name }}
         # Logging uses Write-Host for clearer visibility
@@ -155,12 +168,11 @@ jobs:
           echo "Application start command successfully executed on remote server."
 
       - name: Verify Application Process (Real-time Polling)
-        # FIX: Using a simpler, single-line PowerShell command and explicit error handling 
-        # to prevent the "path specified" error from the non-interactive shell environment.
+        # Fixes from last turn included: use robust 'tasklist' and '|| true' for retry logic.
         run: |
           USER="${{ steps.setup.outputs.ssh_user }}"
           HOST="${{ steps.setup.outputs.ssh_host }}"
-          MAX_ATTEMPTS=5 # Max wait time of 12 * 5 = 60 seconds
+          MAX_ATTEMPTS=5   # Max wait time of 5 * 30 = 150 seconds
           WAIT_SECONDS=30
           PROCESS_NAME='python'
 
@@ -170,23 +182,18 @@ jobs:
               echo "[POLL $i/$MAX_ATTEMPTS] Waiting $WAIT_SECONDS seconds... Checking for process '${PROCESS_NAME}'..."
               sleep $WAIT_SECONDS
 
-              # The remote PowerShell command is now highly simplified to just output '1' or '0'
-              # This bypasses potential issues with how complex commands are interpreted in the SSH environment.
-              # We use 'Write-Output' to guarantee clean stdout for the bash script to capture.
-              CHECK_CMD="\$ErrorActionPreference='SilentlyContinue'; if ((Get-Process -Name ${PROCESS_NAME}).Count -gt 0) { Write-Output '1' } else { Write-Output '0' }"
-
+              # Use 'tasklist' and 'find' in a simple CMD command, which is more reliable than PowerShell for this simple check.
+              # '|| true' ensures the loop continues even if the SSH command fails to connect or run the command.
               CHECK_RESULT=$(ssh -i ~/.ssh/deploy_key \
                 -o StrictHostKeyChecking=no \
                 -o UserKnownHostsFile=~/.ssh/known_hosts \
                 "${USER}@${HOST}" \
-                "powershell -Command \"${CHECK_CMD}\" 2>/dev/null")
-              
-              # Remove any whitespace from the check result
-              CHECK_RESULT=$(echo "$CHECK_RESULT" | tr -d '[:space:]')
+                "cmd.exe /c \"tasklist /nh /fi \"IMAGENAME eq ${PROCESS_NAME}.exe\" 2>&1\"" || true)
 
-              if [ "$CHECK_RESULT" -eq 1 ]; then
+              # Check if the output contains the process name (meaning it's running)
+              if echo "$CHECK_RESULT" | grep -i "${PROCESS_NAME}.exe"; then
                   echo "✅ Process '${PROCESS_NAME}' found running on the VM."
-                  exit 0 # Success
+                  exit 0 # Success, exit the step successfully
               fi
           done
 
