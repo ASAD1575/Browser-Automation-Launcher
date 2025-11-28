@@ -160,8 +160,8 @@ jobs:
         run: |
           USER="${{ steps.setup.outputs.ssh_user }}"
           HOST="${{ steps.setup.outputs.ssh_host }}"
-          MAX_ATTEMPTS=12 # Max wait time of 12 * 5 = 60 seconds
-          WAIT_SECONDS=5
+          MAX_ATTEMPTS=5 # Max wait time of 12 * 5 = 60 seconds
+          WAIT_SECONDS=30
           PROCESS_NAME='python'
 
           echo "Starting real-time polling for process '${PROCESS_NAME}'..."
