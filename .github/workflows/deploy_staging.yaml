@@ -88,7 +88,7 @@ jobs:
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             "${USER}@${HOST}" \
-            "powershell -Command \"\$ErrorActionPreference = 'Stop'; \$pythonProcess = Get-Process -Name python -ErrorAction SilentlyContinue; if (\$pythonProcess) { Write-Warning 'Python process found. Stopping...'; Stop-Process -Name python -Force; Write-Warning 'Python process stopped successfully.' } else { Write-Warning 'INFO: Python process was not running.' }\""
+            "powershell -Command \"\$ErrorActionPreference = 'Stop'; \$pythonProcess = Get-Process -Name python -ErrorAction SilentlyContinue; if (\$pythonProcess) { Write-Host 'Python process found. Stopping...' -ForegroundColor Yellow; Stop-Process -Name python -Force; Write-Host 'Python process stopped successfully.' -ForegroundColor Green } else { Write-Host 'INFO: Python process was not running.' -ForegroundColor Yellow }\""
 
       - name: Pull Latest Code on ${{ matrix.server.name }}
         # Use explicit path for git executable for robustness.
@@ -98,7 +98,6 @@ jobs:
           HOST="${{ steps.setup.outputs.ssh_host }}"
           APP_DIR="${{ steps.setup.outputs.app_dir }}"
           
-          echo "Pulling latest code on server ${HOST} in directory ${APP_DIR}"
           # NOTE: We use the full path 'C:\Program Files\Git\bin\git.exe' for robustness
           ssh -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=no \
@@ -122,21 +121,21 @@ jobs:
               }; 
               
               \$ErrorActionPreference = 'Stop'; 
-              Write-Warning 'Pulling latest code from staging branch...'; 
+              Write-Host 'Pulling latest code from staging branch...' -ForegroundColor Yellow; 
               & \"\$GitExe\" pull origin staging; 
               
               if (\$LASTEXITCODE -ne 0) { 
                 Write-Error \"Git pull failed with exit code \$LASTEXITCODE\"; 
                 exit \$LASTEXITCODE 
               } else { 
-                Write-Warning 'Code pull successful.' 
+                Write-Host 'Code pull successful.' -ForegroundColor Green
               }
             \""
 
       - name: Restart Application and Verify Success on ${{ matrix.server.name }}
-        # *** MAJOR CHANGE: Bypassing schtasks /run and using Start-Process directly for non-blocking execution ***
+        # Logging has been updated to use Write-Host for better visibility in GitHub Actions logs.
         run: |
-          echo "Starting application on server ${{ matrix.server.name }} and verifying startup..."
+          
           # Use the setup outputs for connection details
           USER="${{ steps.setup.outputs.ssh_user }}"
           HOST="${{ steps.setup.outputs.ssh_host }}"
@@ -153,29 +152,28 @@ jobs:
             \$ProcessName = 'python'; # Replace with your actual process name if different
             
             # --- 1. DIRECT APPLICATION START (Non-Blocking) ---
-            Write-Warning '--- Attempting DIRECT, NON-BLOCKING Application START via Start-Process ---';
+            Write-Host '--- Attempting DIRECT, NON-BLOCKING Application START via Start-Process ---' -ForegroundColor Yellow;
 
             # Find the python executable path (assuming it's in the PATH or the environment where the SSH user is running)
-            # You might need to replace 'python.exe' with the absolute path if it is not in the PATH.
+            # If you are using a virtual environment, you need to use the full path to the python.exe in the venv.
             \$PythonPath = 'python'; 
             \$ScriptPath = '${APP_DIR}\main.py';
             
             # Start the process detached.
             # -NoNewWindow prevents a visible console from opening.
-            # -PassThru returns the process object, but since we are not capturing it, it effectively runs detached.
             Start-Process -FilePath \$PythonPath -ArgumentList \$ScriptPath -WorkingDirectory '${APP_DIR}' -NoNewWindow;
 
-            Write-Warning 'Application started via Start-Process. Starting polling for process verification...';
+            Write-Host 'Application started via Start-Process. Starting polling for process verification...' -ForegroundColor Cyan;
 
             # --- 2. Polling loop to verify Python process start ---
             for (\$i = 1; \$i -le \$MaxAttempts; \$i++) {
-                Write-Warning \"[POLL \`$i/\`$MaxAttempts] Waiting \`$WaitSeconds seconds... Checking for process '\$ProcessName'...\";
+                Write-Host \"[POLL \`$i/\`$MaxAttempts] Waiting \`$WaitSeconds seconds... Checking for process '\$ProcessName'...\" -ForegroundColor Cyan;
                 Start-Sleep -Seconds \$WaitSeconds;
                 
                 \$ProcessList = Get-Process -Name \$ProcessName -ErrorAction SilentlyContinue;
 
                 if (\$ProcessList.Count -gt 0) {
-                    Write-Warning \"✅ Process '\$ProcessName' found running on the VM.\";
+                    Write-Host \"✅ Process '\$ProcessName' found running on the VM.\" -ForegroundColor Green;
                     exit 0; # Success
                 }
             }
@@ -185,9 +183,9 @@ jobs:
             \""
 
       - name: Verify Deployment Commit Hash on ${{ matrix.server.name }}
-        # This step verifies the code commit, which is good practice.
+        # Logging has been updated to use Write-Host for better visibility.
         run: |
-          echo "Verifying deployment commit hash on server ${{ matrix.server.name }}..."
+          
           # Use the setup outputs for connection details
           USER="${{ steps.setup.outputs.ssh_user }}"
           HOST="${{ steps.setup.outputs.ssh_host }}"
@@ -220,8 +218,8 @@ jobs:
               }; 
               
               \$ErrorActionPreference = 'Stop'; 
-              Write-Warning 'Current Commit Hash: '; 
-              & \"\$GitExe\" log -1 --oneline | Out-String; 
+              Write-Host 'Current Commit Hash: ' -ForegroundColor Cyan; 
+              & \"\$GitExe\" log -1 --oneline; 
               
               if (\$LASTEXITCODE -ne 0) { 
                 Write-Error \"❌ Failed to verify deployment. Git log returned exit code \$LASTEXITCODE\"; 
