@@ -102,6 +102,7 @@ jobs:
             "powershell -Command \"if (-not (Test-Path '${APP_DIR}')) { Write-Error \"Application directory does not exist: ${APP_DIR}\"; exit 1 }; cd '${APP_DIR}'; \$oldErrorAction = \$ErrorActionPreference; \$ErrorActionPreference = 'SilentlyContinue'; \$null = git rev-parse --git-dir 2>&1; \$isGitRepo = (\$LASTEXITCODE -eq 0); \$ErrorActionPreference = \$oldErrorAction; if (-not \$isGitRepo) { Write-Error \"ERROR: Not a git repository. Directory '${APP_DIR}' exists but is not a git repository. Please ensure the repository has been cloned to this location.\"; exit 1 }; \$ErrorActionPreference = 'Stop'; Write-Warning 'Pulling latest code from staging branch...'; git pull origin staging; if (\$LASTEXITCODE -ne 0) { Write-Error \"Git pull failed with exit code \$LASTEXITCODE\"; exit \$LASTEXITCODE } else { Write-Warning 'Code pull successful.' }\""
 
       - name: Restart Application on ${{ matrix.server.name }}
+        # THIS IS THE FIXED AND IMPROVED STEP FOR ROBUSTNESS AND LOGGING
         run: |
           # Use the setup outputs for connection details
           USER="${{ steps.setup.outputs.ssh_user }}"
@@ -115,62 +116,52 @@ jobs:
             \$ErrorActionPreference = 'Stop';
             \$TaskName = 'BrowserAutomationStartup';
 
-            Write-Host '--- Attempting Scheduled Task RERUN ---';
-
-            # 1. Query the task status and capture output
-            \$QueryOutput = schtasks /query /tn \$TaskName /fo LIST 2>&1;
-            Write-Host \"[QUERY OUTPUT] \$QueryOutput\";
-
+            Write-Warning '--- Attempting Robust Scheduled Task RERUN (Start/Stop) ---';
+            
+            # 1. Query the task status (Use /v for verbose output to find the 'State' field reliably)
+            Write-Warning 'Querying task status...';
+            # Capture output and redirect stderr (2) to stdout (&1) to capture errors in the variable
+            \$QueryOutput = schtasks /query /tn \$TaskName /fo LIST /v 2>&1 | Out-String; 
             \$CurrentState = 'Unknown';
-
-            if (\$QueryOutput -match 'Status:\\s+(\\w+)') {
+            
+            # Use regex to reliably extract the State (works across different locales better than simple string parsing)
+            if (\$QueryOutput -match 'State:\\s+(\\w+)') {
                 \$CurrentState = \$Matches[1];
-                Write-Host \"[STATUS CHECK] Task '\$TaskName' current status is: \$CurrentState\";
+                Write-Warning \"[STATUS CHECK] Task '\$TaskName' current state detected as: \$CurrentState\";
             } else {
-                Write-Host \"[STATUS CHECK] Could not determine the status of task '\$TaskName'. Proceeding...\";
+                # This is a critical failure if the status cannot be read
+                Write-Error \"❌ FAILED: Could not parse status for task '\$TaskName'. Check task name and server configuration. Output:\n\$QueryOutput\";
+                exit 1;
             }
 
-            # 2. Conditional actions based on status
-            if (\$CurrentState -eq 'Ready') {
-                Write-Host \"Task '\$TaskName' is READY. Running the task...\";
-                \$RunOutput = schtasks /run /tn \$TaskName 2>&1;
-                Write-Host \"[RUN OUTPUT] \$RunOutput\";
+            # 2. Conditional Stop if Running (Prevents concurrent runs)
+            if (\$CurrentState -eq 'Running') {
+                Write-Warning \"Task '\$TaskName' is RUNNING. Attempting to stop it first...\";
+                
+                schtasks /end /tn \$TaskName 2>&1 | Out-String; # Capture output to prevent unexpected SSH breaks
                 if (\$LASTEXITCODE -ne 0) {
-                    Write-Error \"❌ Failed to run task '\$TaskName'. Exit code: \$LASTEXITCODE\";
-                    exit 1;
-                } else {
-                    Write-Host '✅ Task run successfully.';
-                }
-            } elseif (\$CurrentState -eq 'Running') {
-                Write-Host \"Task '\$TaskName' is RUNNING. Ending the task...\";
-                \$EndOutput = schtasks /end /tn \$TaskName 2>&1;
-                Write-Host \"[END OUTPUT] \$EndOutput\";
-                if (\$LASTEXITCODE -ne 0) {
-                    Write-Error \"❌ Failed to end task '\$TaskName'. Exit code: \$LASTEXITCODE\";
+                    Write-Error \"❌ Failed to STOP task '\$TaskName'. Exit code: \$LASTEXITCODE\"; 
                     exit 1;
                 }
-                Write-Host 'Task ended successfully. Waiting 30 seconds...';
-                Start-Sleep -Seconds 30;
-                Write-Host 'Running the task again...';
-                \$RunOutput = schtasks /run /tn \$TaskName 2>&1;
-                Write-Host \"[RUN OUTPUT] \$RunOutput\";
-                if (\$LASTEXITCODE -ne 0) {
-                    Write-Error \"❌ Failed to run task '\$TaskName'. Exit code: \$LASTEXITCODE\";
-                    exit 1;
-                } else {
-                    Write-Host '✅ Task run successfully.';
-                }
+                Write-Warning 'Task stopped successfully. Waiting 10 seconds for process teardown...';
+                Start-Sleep -Seconds 10; 
+            } elseif (\$CurrentState -eq 'Ready') {
+                Write-Warning \"Task '\$TaskName' is READY. Proceeding directly to run.\";
             } else {
-                Write-Host \"Task '\$TaskName' status is '\$CurrentState'. Proceeding to run.\";
-                \$RunOutput = schtasks /run /tn \$TaskName 2>&1;
-                Write-Host \"[RUN OUTPUT] \$RunOutput\";
-                if (\$LASTEXITCODE -ne 0) {
-                    Write-Error \"❌ Failed to run task '\$TaskName'. Exit code: \$LASTEXITCODE\";
-                    exit 1;
-                } else {
-                    Write-Host '✅ Task run successfully.';
-                }
+                Write-Warning \"Task '\$TaskName' state is '\$CurrentState'. Proceeding to run.\";
             }
+
+            # 3. Rerun the task (Start the new code)
+            Write-Warning \"Attempting to run scheduled task: \$TaskName to start the application...\";
+            schtasks /run /tn \$TaskName 2>&1 | Out-String;
+
+            if (\$LASTEXITCODE -ne 0) {
+                Write-Error \"❌ Failed to TRIGGER scheduled task '\$TaskName'. Schtasks returned exit code \$LASTEXITCODE\";
+                exit 1;
+            } else {
+                Write-Warning '✅ Scheduled task trigger command executed successfully.'
+            }
+            Write-Warning '--- Restart process completed ---';
             \""
 
       - name: Verify Application Running Status
