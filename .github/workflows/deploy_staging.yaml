@@ -101,8 +101,8 @@ jobs:
             "${USER}@${HOST}" \
             "powershell -Command \"if (-not (Test-Path '${APP_DIR}')) { Write-Error \"Application directory does not exist: ${APP_DIR}\"; exit 1 }; cd '${APP_DIR}'; \$oldErrorAction = \$ErrorActionPreference; \$ErrorActionPreference = 'SilentlyContinue'; \$null = git rev-parse --git-dir 2>&1; \$isGitRepo = (\$LASTEXITCODE -eq 0); \$ErrorActionPreference = \$oldErrorAction; if (-not \$isGitRepo) { Write-Error \"ERROR: Not a git repository. Directory '${APP_DIR}' exists but is not a git repository. Please ensure the repository has been cloned to this location.\"; exit 1 }; \$ErrorActionPreference = 'Stop'; Write-Warning 'Pulling latest code from staging branch...'; git pull origin staging; if (\$LASTEXITCODE -ne 0) { Write-Error \"Git pull failed with exit code \$LASTEXITCODE\"; exit \$LASTEXITCODE } else { Write-Warning 'Code pull successful.' }\""
 
-      - name: Restart Application on ${{ matrix.server.name }}
-        # THIS IS THE FIXED AND IMPROVED STEP FOR ROBUSTNESS AND LOGGING
+      - name: Restart Application and Verify Success on ${{ matrix.server.name }}
+        # *** ROBUSTNESS FIX: Polling for 'Last Run Result' (Exit Code 0) ***
         run: |
           # Use the setup outputs for connection details
           USER="${{ steps.setup.outputs.ssh_user }}"
@@ -115,56 +115,63 @@ jobs:
             "powershell -Command \"
             \$ErrorActionPreference = 'Stop';
             \$TaskName = 'BrowserAutomationStartup';
+            \$MaxAttempts = 10; # Max wait time of 10 * 5 = 50 seconds
+            \$WaitSeconds = 5;
 
             Write-Warning '--- Attempting Robust Scheduled Task RERUN (Start/Stop) ---';
             
-            # 1. Query the task status (Use /v for verbose output to find the 'State' field reliably)
+            # 1. Query and STOP if running
             Write-Warning 'Querying task status...';
-            # Capture output and redirect stderr (2) to stdout (&1) to capture errors in the variable
             \$QueryOutput = schtasks /query /tn \$TaskName /fo LIST /v 2>&1 | Out-String; 
-            \$CurrentState = 'Unknown';
-            
-            # Use regex to reliably extract the State (works across different locales better than simple string parsing)
-            if (\$QueryOutput -match 'State:\\s+(\\w+)') {
-                \$CurrentState = \$Matches[1];
-                Write-Warning \"[STATUS CHECK] Task '\$TaskName' current state detected as: \$CurrentState\";
-            } else {
-                # This is a critical failure if the status cannot be read
-                Write-Error \"❌ FAILED: Could not parse status for task '\$TaskName'. Check task name and server configuration. Output:\n\$QueryOutput\";
-                exit 1;
-            }
-
-            # 2. Conditional Stop if Running (Prevents concurrent runs)
-            if (\$CurrentState -eq 'Running') {
-                Write-Warning \"Task '\$TaskName' is RUNNING. Attempting to stop it first...\";
-                
-                schtasks /end /tn \$TaskName 2>&1 | Out-String; # Capture output to prevent unexpected SSH breaks
+            if (\$QueryOutput -match 'State:\\s+Running') {
+                Write-Warning \"Task '\$TaskName' is RUNNING. Stopping it...\";
+                schtasks /end /tn \$TaskName 2>&1 | Out-String; 
                 if (\$LASTEXITCODE -ne 0) {
                     Write-Error \"❌ Failed to STOP task '\$TaskName'. Exit code: \$LASTEXITCODE\"; 
                     exit 1;
                 }
                 Write-Warning 'Task stopped successfully. Waiting 10 seconds for process teardown...';
                 Start-Sleep -Seconds 10; 
-            } elseif (\$CurrentState -eq 'Ready') {
-                Write-Warning \"Task '\$TaskName' is READY. Proceeding directly to run.\";
-            } else {
-                Write-Warning \"Task '\$TaskName' state is '\$CurrentState'. Proceeding to run.\";
             }
 
-            # 3. Rerun the task (Start the new code)
-            Write-Warning \"Attempting to run scheduled task: \$TaskName to start the application...\";
+            # 2. Run the task
+            Write-Warning \"Attempting to run scheduled task: \$TaskName...\";
             schtasks /run /tn \$TaskName 2>&1 | Out-String;
 
             if (\$LASTEXITCODE -ne 0) {
                 Write-Error \"❌ Failed to TRIGGER scheduled task '\$TaskName'. Schtasks returned exit code \$LASTEXITCODE\";
                 exit 1;
-            } else {
-                Write-Warning '✅ Scheduled task trigger command executed successfully.'
             }
-            Write-Warning '--- Restart process completed ---';
+            Write-Warning 'Scheduled task trigger command accepted. Starting polling for execution status...';
+            
+            # 3. Polling loop to verify Last Run Result (0 is success)
+            for (\$i = 1; \$i -le \$MaxAttempts; \$i++) {
+                Write-Warning \"[POLL \`$i/\`$MaxAttempts] Waiting \`$WaitSeconds seconds...\";
+                Start-Sleep -Seconds \$WaitSeconds;
+                
+                \$TaskInfo = schtasks /query /tn \$TaskName /fo LIST /v 2>&1 | Out-String;
+                
+                \$LastRunResult = \$null;
+                if (\$TaskInfo -match 'Last Run Result:\\s+(\\d+)') {
+                    \$LastRunResult = [int]\$Matches[1];
+                }
+
+                if (\$LastRunResult -eq 0) {
+                    Write-Warning \"✅ Task execution successful! Last Run Result is 0.\";
+                    exit 0; # Success
+                } elseif (\$LastRunResult -ne \$null -and \$LastRunResult -ne 1 -and \$LastRunResult -ne 2) {
+                    # 1 and 2 are typically 'Running' or 'Task not yet run' codes, so other non-zero is a failure
+                    Write-Error \"❌ TASK FAILED: Last Run Result is '\$LastRunResult'. Check the Task Scheduler history on the VM for details.\";
+                    exit 1;
+                }
+            }
+
+            Write-Error \"❌ TIMEOUT: Scheduled task did not report successful completion (Last Run Result 0) after \$((\$MaxAttempts * \$WaitSeconds)) seconds.\";
+            exit 1;
             \""
 
       - name: Verify Application Running Status
+        # Simplified verification step as the restart step now handles success confirmation
         run: |
           # Use the setup outputs for connection details
           USER="${{ steps.setup.outputs.ssh_user }}"
@@ -179,40 +186,28 @@ jobs:
             \$TaskName = 'BrowserAutomationStartup';
 
             Write-Warning '--- Deployment Verification by Scheduled Task Status ---';
-
-            # Query the task status and capture output
-            \$QueryOutput = schtasks /query /tn \$TaskName /fo LIST 2>&1;
-            Write-Warning \"[VERIFY QUERY OUTPUT] \$QueryOutput\";
-
+            
+            \$TaskInfo = schtasks /query /tn \$TaskName /fo LIST /v 2>\$null;
             \$CurrentState = 'Unknown';
+            \$LastRunResult = 'Unknown';
 
-            # Extract the Status value using regex
-            if (\$QueryOutput -match 'Status:\\s+(\\w+)') {
+            if (\$TaskInfo -match 'State:\\s+(\\w+)') {
                 \$CurrentState = \$Matches[1];
-                Write-Warning \"[VERIFY STATUS] Final task status reported as: \$CurrentState\";
-            } else {
-                Write-Error \"❌ ERROR: Could not determine the status of task '\$TaskName'. Aborting verification.\";
-                exit 1;
             }
-
-            # If the task is Ready, attempt to re-run it one last time as it may have failed to launch on the first attempt
-            if (\$CurrentState -eq 'Ready') {
-                Write-Warning 'Task is Ready, indicating it might not have successfully launched the application.';
-                Write-Warning 'Attempting a final RERUN to ensure launch...';
-
-                \$RunOutput = schtasks /run /tn \$TaskName 2>&1;
-                Write-Warning \"[VERIFY RUN OUTPUT] \$RunOutput\";
-
-                if (\$LASTEXITCODE -ne 0) {
-                    Write-Error \"❌ ERROR: Failed to RERUN task '\$TaskName'. Schtasks returned exit code \$LASTEXITCODE\";
-                    exit 1;
-                } else {
-                    Write-Warning '✅ RERUN command executed successfully. Assuming application launch is now guaranteed.';
-                }
-            } elseif (\$CurrentState -eq 'Running') {
-                Write-Warning '✅ Task is RUNNING. Deployment confirmed via scheduler status.';
+            if (\$TaskInfo -match 'Last Run Result:\\s+(\\d+)') {
+                \$LastRunResult = \$Matches[1];
+            }
+            
+            Write-Warning \"[VERIFY STATUS] Final task state reported as: \$CurrentState\";
+            Write-Warning \"[VERIFY RESULT] Last Run Result: \$LastRunResult\";
+            
+            if (\$CurrentState -eq 'Running') {
+                Write-Warning '✅ Application process is Running according to the scheduler.';
+            } elseif (\$LastRunResult -eq '0') {
+                Write-Warning '✅ Task successfully completed (Result 0). Assuming application is running as designed.';
             } else {
-                Write-Warning \"✅ Task is in status '\$CurrentState'. Verification successful (Task triggered successfully).\"
+                Write-Error \"❌ WARNING: Task is not Running and Last Run Result was not 0. Investigate VM for process errors.\";
+                exit 1;
             }
             \""
 
@@ -226,7 +221,7 @@ jobs:
           ssh -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
-            "${USER}@${HOST}" \
+            "${USER}@${HOST}"
             "powershell -Command \"if (-not (Test-Path '${APP_DIR}')) { Write-Error \"Application directory does not exist: ${APP_DIR}\"; exit 1 }; cd '${APP_DIR}'; \$oldErrorAction = \$ErrorActionPreference; \$ErrorActionPreference = 'SilentlyContinue'; \$null = git rev-parse --git-dir 2>&1; \$isGitRepo = (\$LASTEXITCODE -eq 0); \$ErrorActionPreference = \$oldErrorAction; if (-not \$isGitRepo) { Write-Error \"ERROR: Not a git repository. Directory '${APP_DIR}' exists but is not a git repository. Please ensure the repository has been cloned to this location.\"; exit 1 }; \$ErrorActionPreference = 'Stop'; Write-Warning 'Current Commit Hash: '; git log -1 --oneline | Out-String; if (\$LASTEXITCODE -ne 0) { Write-Error \"Failed to verify deployment. Git log returned exit code \$LASTEXITCODE\"; exit \$LASTEXITCODE }\""
 
       - name: Cleanup SSH Key
