@@ -37,12 +37,12 @@ jobs:
           - name: EC2-Server-1
             host_secret: EC2_HOST_1 # Name of the secret holding the Hostname/IP
             key_secret: EC2_SSH_PRIVATE_KEY_1 # Name of the secret holding the Private Key
-          # - name: EC2-Server-2
-          #   host_secret: EC2_HOST_2
-          #   key_secret: EC2_SSH_PRIVATE_KEY_2
-          # - name: EC2-Server-3
-          #   host_secret: EC2_HOST_3
-          #   key_secret: EC2_SSH_PRIVATE_KEY_3
+          - name: EC2-Server-2
+            host_secret: EC2_HOST_2
+            key_secret: EC2_SSH_PRIVATE_KEY_2
+          - name: EC2-Server-3
+            host_secret: EC2_HOST_3
+            key_secret: EC2_SSH_PRIVATE_KEY_3
       fail-fast: false
 
     steps:
@@ -115,24 +115,33 @@ jobs:
             \$ErrorActionPreference = 'Stop';
             \$TaskName = 'BrowserAutomationStartup';
 
-            # 1. Check current status for 'Running' state
+            # 1. Query the task status using the verbose list format
             \$TaskInfo = schtasks /query /tn \$TaskName /fo LIST /v 2>\$null;
+            \$CurrentState = 'Unknown';
+            
+            # Extract the State value using regex
+            if (\$TaskInfo -match 'State:\\s+(\\w+)') {
+                \$CurrentState = \$Matches[1];
+                Write-Host \"[STATUS CHECK] Task '\$TaskName' current state is: \$CurrentState\";
+            } else {
+                Write-Host \"[STATUS CHECK] Could not explicitly determine the state of task '\$TaskName'. Proceeding...\";
+            }
 
-            if (\$TaskInfo -match 'State:\\s+Running') {
-                Write-Host \"Task '\$TaskName' is currently RUNNING. Attempting to stop it...\";
+            # 2. Conditional Stop if Running
+            if (\$CurrentState -eq 'Running') {
+                Write-Host \"Task '\$TaskName' is RUNNING. Attempting to stop it first...\";
                 
-                # 2. Stop the running task
                 schtasks /end /tn \$TaskName;
                 if (\$LASTEXITCODE -ne 0) {
                     Write-Error \"Failed to STOP task '\$TaskName'. Exit code: \$LASTEXITCODE\"; 
                     exit 1;
                 }
-                Write-Host \"Task '\$TaskName' stopped successfully. Waiting 5 seconds...\";
-                
-                # Give it a moment to clear the state
+                Write-Host \"Task '\$TaskName' stopped successfully. Waiting 5 seconds for cleanup...\";
                 Start-Sleep -Seconds 5; 
+            } elseif (\$CurrentState -eq 'Ready') {
+                Write-Host \"Task '\$TaskName' is READY. Proceeding directly to run.\";
             } else {
-                Write-Host \"Task '\$TaskName' is not currently running. Proceeding to run.\";
+                Write-Host \"Task '\$TaskName' state is '\$CurrentState'. Proceeding to run.\";
             }
 
             # 3. Rerun the task
@@ -170,7 +179,7 @@ jobs:
             PROCESS_CHECK=$(echo $PROCESS_CHECK | tr -d '[:space:]')
             
             if [ "$PROCESS_CHECK" -gt 0 ]; then
-              echo "✅ Application process (python.exe) detected after $i attempt(s). Deployment verified."
+              echo "Application process (python.exe) detected after $i attempt(s). Deployment verified."
               exit 0 # Success!
             fi
             
@@ -180,7 +189,7 @@ jobs:
             fi
           done
           
-          echo "❌ ERROR: Application process (python.exe) was not found after $VERIFY_ATTEMPTS attempts."
+          echo "ERROR: Application process (python.exe) was not found after $VERIFY_ATTEMPTS attempts."
           exit 1 # Failure
 
       - name: Verify Deployment Commit Hash on ${{ matrix.server.name }}
@@ -194,7 +203,7 @@ jobs:
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             "${USER}@${HOST}" \
-            "powershell -Command \"if (-not (Test-Path '${APP_DIR}')) { Write-Error \"Application directory does not exist: ${APP_DIR}\"; exit 1 }; cd '${APP_DIR}'; \$oldErrorAction = \$ErrorActionPreference; \$ErrorActionPreference = 'SilentlyContinue'; \$null = git rev-parse --git-dir 2>&1; \$isGitRepo = (\$LASTEXITCODE -eq 0); \$ErrorActionPreference = \$oldErrorAction; if (-not \$isGitRepo) { Write-Error \"ERROR: Not a git repository. Directory '${APP_DIR}' exists but is not a git repository.\"; exit 1 }; \$ErrorActionPreference = 'Stop'; Write-Host 'Current Commit Hash: '; git log -1 --oneline; if (\$LASTEXITCODE -ne 0) { Write-Error \"Failed to verify deployment. Git log returned exit code \$LASTEXITCODE\"; exit \$LASTEXITCODE }\""
+            "powershell -Command \"if (-not (Test-Path '${APP_DIR}')) { Write-Error \"Application directory does not exist: ${APP_DIR}\"; exit 1 }; cd '${APP_DIR}'; \$oldErrorAction = \$ErrorActionPreference; \$ErrorActionPreference = 'SilentlyContinue'; \$null = git rev-parse --git-dir 2>&1; \$isGitRepo = (\$LASTEXITCODE -eq 0); \$ErrorActionPreference = \$oldErrorAction; if (-not \$isGitRepo) { Write-Error \"ERROR: Not a git repository. Directory '${APP_DIR}' exists but is not a git repository. Please ensure the repository has been cloned to this location.\"; exit 1 }; \$ErrorActionPreference = 'Stop'; Write-Host 'Current Commit Hash: '; git log -1 --oneline; if (\$LASTEXITCODE -ne 0) { Write-Error \"Failed to verify deployment. Git log returned exit code \$LASTEXITCODE\"; exit \$LASTEXITCODE }\""
 
       - name: Cleanup SSH Key
         if: always()
