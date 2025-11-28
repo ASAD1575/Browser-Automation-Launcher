@@ -78,6 +78,7 @@ jobs:
       - name: Stop Application on ${{ matrix.server.name }}
         # This step is critical: it kills the old process before we start a new one.
         run: |
+          echo "Stopping existing application process on server ${{ matrix.server.name }} if running..."
           # Use the setup outputs for connection details
           USER="${{ steps.setup.outputs.ssh_user }}"
           HOST="${{ steps.setup.outputs.ssh_host }}"
@@ -97,6 +98,7 @@ jobs:
           HOST="${{ steps.setup.outputs.ssh_host }}"
           APP_DIR="${{ steps.setup.outputs.app_dir }}"
           
+          echo "Pulling latest code on server ${HOST} in directory ${APP_DIR}"
           # NOTE: We use the full path 'C:\Program Files\Git\bin\git.exe' for robustness
           ssh -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=no \
@@ -134,6 +136,7 @@ jobs:
       - name: Restart Application and Verify Success on ${{ matrix.server.name }}
         # *** MAJOR CHANGE: Bypassing schtasks /run and using Start-Process directly for non-blocking execution ***
         run: |
+          echo "Starting application on server ${{ matrix.server.name }} and verifying startup..."
           # Use the setup outputs for connection details
           USER="${{ steps.setup.outputs.ssh_user }}"
           HOST="${{ steps.setup.outputs.ssh_host }}"
@@ -184,6 +187,7 @@ jobs:
       - name: Verify Deployment Commit Hash on ${{ matrix.server.name }}
         # This step verifies the code commit, which is good practice.
         run: |
+          echo "Verifying deployment commit hash on server ${{ matrix.server.name }}..."
           # Use the setup outputs for connection details
           USER="${{ steps.setup.outputs.ssh_user }}"
           HOST="${{ steps.setup.outputs.ssh_host }}"
