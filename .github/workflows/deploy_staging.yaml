@@ -83,12 +83,23 @@ jobs:
           USER="${{ steps.setup.outputs.ssh_user }}"
           HOST="${{ steps.setup.outputs.ssh_host }}"
           APP_DIR="${{ steps.setup.outputs.app_dir }}"
-          
+              
           ssh -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             "${USER}@${HOST}" \
-            "powershell -Command \"\$ErrorActionPreference = 'Stop'; \$pythonProcess = Get-Process -Name python -ErrorAction SilentlyContinue; if (\$pythonProcess) { Write-Warning 'Python process found. Stopping...'; New-Item -ItemType File -Path '${{ steps.setup.outputs.app_dir }}\logs\STOP'; Stop-Process -Name python -Force; Write-Warning 'Python process stopped successfully.'; exit 1; } else { Write-Warning 'INFO: Python process was not running.' }\""
+            "powershell -Command \"\$ErrorActionPreference = 'Stop'; \
+              \$pythonProcess = Get-Process -Name python -ErrorAction SilentlyContinue; \
+              if (\$pythonProcess) { \
+                Write-Warning 'Python process found. Stopping...'; \
+                New-Item -ItemType File -Path '${{ steps.setup.outputs.app_dir }}\logs\STOP' -Force | Out-Null; \
+                Stop-Process -Name python -Force; \
+                Write-Warning 'Python process stopped successfully.'; \
+                exit 0; \
+              } else { \
+                Write-Warning 'INFO: Python process was not running. Exiting with failure code.'; \
+                exit 1; \
+              }\""
 
       - name: Pull Latest Code on ${{ matrix.server.name }}
         run: |
