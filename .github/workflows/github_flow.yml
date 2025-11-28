@@ -9,7 +9,6 @@ on:
   pull_request:
     branches:
       - main
-      - staging
   workflow_dispatch:
     inputs:
       environment:
@@ -17,7 +16,7 @@ on:
         required: true
         default: 'dev'
         type: choice
-        options: [ dev, staging, prod ]
+        options: [ dev, prod ]
       action:
         description: 'Apply or destroy'
         required: true
@@ -38,10 +37,10 @@ jobs:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v3
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::375299695019:role/GitHubActionsTerraformRole
           aws-region: us-east-1
@@ -49,7 +48,7 @@ jobs:
       - name: Install Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.9.8
+          terraform_version: 1.14.0
 
       - name: Deploy to dev
         run: |
@@ -102,10 +101,10 @@ jobs:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v3
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::375299695019:role/GitHubActionsTerraformRole
           aws-region: us-east-1
@@ -163,10 +162,10 @@ jobs:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v3
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::375299695019:role/GitHubActionsTerraformRole
           aws-region: us-east-1
@@ -226,7 +225,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set Output Artifact Name
         id: set_artifact_name
@@ -248,7 +247,7 @@ jobs:
           path: Iac/terraform/
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v3
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::375299695019:role/GitHubActionsTerraformRole
           aws-region: us-east-1
