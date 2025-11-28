@@ -98,17 +98,14 @@ jobs:
             "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
             "powershell -Command \"if (-not (Test-Path '${{ steps.setup.outputs.app_dir }}')) { Write-Error \"Application directory does not exist: ${{ steps.setup.outputs.app_dir }}\"; exit 1 }; cd '${{ steps.setup.outputs.app_dir }}'; \$oldErrorAction = \$ErrorActionPreference; \$ErrorActionPreference = 'SilentlyContinue'; \$null = git rev-parse --git-dir 2>&1; \$isGitRepo = (\$LASTEXITCODE -eq 0); \$ErrorActionPreference = \$oldErrorAction; if (-not \$isGitRepo) { Write-Error \"ERROR: Not a git repository. Directory '${{ steps.setup.outputs.app_dir }}' exists but is not a git repository. Please ensure the repository has been cloned to this location.\"; exit 1 }; \$ErrorActionPreference = 'Stop'; git pull origin staging; if (\$LASTEXITCODE -ne 0) { Write-Error \"Git pull failed with exit code \$LASTEXITCODE\"; exit \$LASTEXITCODE }\""
 
-      # - name: Start Application (Detached with Logging)
+      # - name: Start Application (Trigger Scheduled Task)
+      #   # UPDATED: Now triggers the named scheduled task instead of running a script directly.
       #   id: start
       #   run: |
-      #     echo "Sleeping 30 seconds before starting application to ensure clean state..."
-      #     sleep 30
-
       #     USER="${{ steps.setup.outputs.ssh_user }}"
       #     HOST="${{ steps.setup.outputs.ssh_host }}"
-      #     APP_DIR="${{ steps.setup.outputs.app_dir }}"
           
-      #     echo "Attempting DIRECT, NON-BLOCKING Application START via cmd.exe redirection..."
+      #     echo "Triggering Scheduled Task 'BrowserAutomationStartup' for detached start..."
           
       #     ssh -i ~/.ssh/deploy_key \
       #       -o StrictHostKeyChecking=no \
@@ -116,18 +113,19 @@ jobs:
       #       "${USER}@${HOST}" \
       #       "powershell -Command \"
       #       \$ErrorActionPreference = 'Stop';
-      #       \$PythonPath = 'python'; 
-      #       \$ScriptPath = 'main.py';
-      #       \$LogFile = '${APP_DIR}\app_startup.log';
-
-      #       # Use cmd /c start /b to detach and redirect all output (2>&1) to the log file
-      #       # Note: We must run this command *from* the APP_DIR to ensure 'python main.py' works correctly.
-      #       cd '${APP_DIR}';
-      #       cmd.exe /c start \"App Server\" /b python \$ScriptPath > \$LogFile 2>&1
+      #       \$TaskName = 'BrowserAutomationStartup';
             
-      #       Write-Host 'Application start command sent with output redirected to log file.' -ForegroundColor Cyan;
+      #       # Use schtasks to trigger the task
+      #       \$SchtasksResult = schtasks /run /tn \$TaskName 2>&1
+            
+      #       if (\$LASTEXITCODE -ne 0 -or \$SchtasksResult -match 'ERROR') {
+      #         Write-Error \"❌ Failed to trigger scheduled task '\$TaskName'. Output: \$SchtasksResult\" -ForegroundColor Red;
+      #         exit 1;
+      #       } else {
+      #         Write-Host \"✅ Scheduled task '\$TaskName' triggered successfully.\" -ForegroundColor Green;
+      #       }
       #       \""
-      #     echo "Application start command successfully executed on remote server."
+      #     echo "Scheduled task trigger command successfully executed on remote server."
 
       # - name: Display Startup Logs on ${{ matrix.server.name }}
       #   run: |
