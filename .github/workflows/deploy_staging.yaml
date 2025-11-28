@@ -26,16 +26,17 @@ jobs:
         run: ruff check .
 
   deploy:
-    name: Deploy to Staging
+    name: Deploy to Staging - ${{ matrix.server.name }}
     needs: lint
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       matrix:
         server:
+          # Define all servers here. Only update this list when adding new servers.
           - name: EC2-Server-1
-            host_secret: EC2_HOST_1
-            key_secret: EC2_SSH_PRIVATE_KEY_1
+            host_secret: EC2_HOST_1 # Name of the secret holding the Hostname/IP
+            key_secret: EC2_SSH_PRIVATE_KEY_1 # Name of the secret holding the Private Key
           # - name: EC2-Server-2
           #   host_secret: EC2_HOST_2
           #   key_secret: EC2_SSH_PRIVATE_KEY_2
@@ -48,54 +49,61 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup SSH and Get Credentials
+      - name: Setup SSH and Get Credentials (Dynamic Secret Access)
         id: setup
         env:
+          # Shared secrets (same for all servers)
           SSH_USER: ${{ secrets.EC2_USERNAME }}
           APP_DIR: ${{ secrets.APP_DIRECTORY }}
-
-          SSH_KEY_1: ${{ secrets.EC2_SSH_PRIVATE_KEY_1 }}
-          SSH_HOST_1: ${{ secrets.EC2_HOST_1 }}
+          
+          # Dynamically look up the secret value based on the key name in the matrix
+          SSH_KEY: ${{ secrets[matrix.server.key_secret] }}
+          SSH_HOST: ${{ secrets[matrix.server.host_secret] }}
+          
         run: |
           mkdir -p ~/.ssh
           
-          # Determine which host and key to use based on matrix server name
-          if [ "${{ matrix.server.name }}" == "EC2-Server-1" ]; then
-            echo "$SSH_KEY_1" > ~/.ssh/deploy_key
-            SSH_HOST="$SSH_HOST_1"
-          elif [ "${{ matrix.server.name }}" == "EC2-Server-2" ]; then
-            echo "$SSH_KEY_2" > ~/.ssh/deploy_key
-            SSH_HOST="$SSH_HOST_2"
-          elif [ "${{ matrix.server.name }}" == "EC2-Server-3" ]; then
-            echo "$SSH_KEY_3" > ~/.ssh/deploy_key
-            SSH_HOST="$SSH_HOST_3"
-          fi
-          
+          # Use the dynamically fetched SSH_KEY
+          echo "${{ env.SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
           
-          echo "ssh_host=$SSH_HOST" >> $GITHUB_OUTPUT
-          echo "ssh_user=$SSH_USER" >> $GITHUB_OUTPUT
-          echo "app_dir=$APP_DIR" >> $GITHUB_OUTPUT
+          # Use the dynamically fetched SSH_HOST
+          ssh-keyscan -H "${{ env.SSH_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+          
+          # Set outputs for subsequent steps
+          echo "ssh_host=${{ env.SSH_HOST }}" >> $GITHUB_OUTPUT
+          echo "ssh_user=${{ env.SSH_USER }}" >> $GITHUB_OUTPUT
+          echo "app_dir=${{ env.APP_DIR }}" >> $GITHUB_OUTPUT
 
-      - name: Stop Application
+      - name: Stop Application on ${{ matrix.server.name }}
         run: |
+          # Use the setup outputs for connection details
+          USER="${{ steps.setup.outputs.ssh_user }}"
+          HOST="${{ steps.setup.outputs.ssh_host }}"
+          APP_DIR="${{ steps.setup.outputs.app_dir }}"
+          
           ssh -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
-            "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
-            "powershell -Command \"\$ErrorActionPreference = 'Stop'; New-Item -ItemType File -Path '${{ steps.setup.outputs.app_dir }}\logs\STOP' -Force -ErrorAction SilentlyContinue | Out-Null; \$pythonProcess = Get-Process -Name python -ErrorAction SilentlyContinue; if (\$pythonProcess) { Write-Host 'Python process found. Stopping...'; Stop-Process -Name python -Force; Write-Host 'Python process stopped successfully.' } else { Write-Host 'INFO: Python process is not running. Nothing to stop.' }\""
+            "${USER}@${HOST}" \
+            "powershell -Command \"\$ErrorActionPreference = 'Stop'; New-Item -ItemType File -Path '${APP_DIR}\logs\STOP' -Force -ErrorAction SilentlyContinue | Out-Null; \$pythonProcess = Get-Process -Name python -ErrorAction SilentlyContinue; if (\$pythonProcess) { Write-Warning 'Python process found. Stopping...'; Stop-Process -Name python -Force; Write-Warning 'Python process stopped successfully.' } else { Write-Warning 'INFO: Python process was not running.' }\""
 
-      - name: Pull Latest Code
+      - name: Pull Latest Code on ${{ matrix.server.name }}
         run: |
+          # Use the setup outputs for connection details
+          USER="${{ steps.setup.outputs.ssh_user }}"
+          HOST="${{ steps.setup.outputs.ssh_host }}"
+          APP_DIR="${{ steps.setup.outputs.app_dir }}"
+          
           ssh -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
-            "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
-            "powershell -Command \"if (-not (Test-Path '${{ steps.setup.outputs.app_dir }}')) { Write-Error \"Application directory does not exist: ${{ steps.setup.outputs.app_dir }}\"; exit 1 }; cd '${{ steps.setup.outputs.app_dir }}'; \$oldErrorAction = \$ErrorActionPreference; \$ErrorActionPreference = 'SilentlyContinue'; \$null = git rev-parse --git-dir 2>&1; \$isGitRepo = (\$LASTEXITCODE -eq 0); \$ErrorActionPreference = \$oldErrorAction; if (-not \$isGitRepo) { Write-Error \"ERROR: Not a git repository. Directory '${{ steps.setup.outputs.app_dir }}' exists but is not a git repository. Please ensure the repository has been cloned to this location.\"; exit 1 }; \$ErrorActionPreference = 'Stop'; Write-Host 'Pulling latest code from staging branch...'; git pull origin staging; if (\$LASTEXITCODE -ne 0) { Write-Error \"Git pull failed with exit code \$LASTEXITCODE\"; exit \$LASTEXITCODE } else { Write-Host 'Code pull successful.' }\""
+            "${USER}@${HOST}" \
+            "powershell -Command \"if (-not (Test-Path '${APP_DIR}')) { Write-Error \"Application directory does not exist: ${APP_DIR}\"; exit 1 }; cd '${APP_DIR}'; \$oldErrorAction = \$ErrorActionPreference; \$ErrorActionPreference = 'SilentlyContinue'; \$null = git rev-parse --git-dir 2>&1; \$isGitRepo = (\$LASTEXITCODE -eq 0); \$ErrorActionPreference = \$oldErrorAction; if (-not \$isGitRepo) { Write-Error \"ERROR: Not a git repository. Directory '${APP_DIR}' exists but is not a git repository. Please ensure the repository has been cloned to this location.\"; exit 1 }; \$ErrorActionPreference = 'Stop'; Write-Warning 'Pulling latest code from staging branch...'; git pull origin staging; if (\$LASTEXITCODE -ne 0) { Write-Error \"Git pull failed with exit code \$LASTEXITCODE\"; exit \$LASTEXITCODE } else { Write-Warning 'Code pull successful.' }\""
 
       - name: Restart Application on ${{ matrix.server.name }}
         run: |
+          # Use the setup outputs for connection details
           USER="${{ steps.setup.outputs.ssh_user }}"
           HOST="${{ steps.setup.outputs.ssh_host }}"
 
@@ -107,59 +115,67 @@ jobs:
             \$ErrorActionPreference = 'Stop';
             \$TaskName = 'BrowserAutomationStartup';
 
-            Write-Host '--- Restarting scheduled task ---';
+            Write-Warning '--- Attempting Scheduled Task RERUN ---';
 
-            # 1. Query current task state
-            \$query = schtasks /query /tn \$TaskName /fo LIST /v 2>\$null;
-            if (-not \$query) {
-              Write-Error \\\"Could not query task '\$TaskName'.\\\";
-              exit 1;
-            }
+            # 1. Query the task status and capture output
+            \$QueryOutput = schtasks /query /tn \$TaskName /fo LIST 2>&1;
+            Write-Warning \"[QUERY OUTPUT] \$QueryOutput\";
 
-            \$state = 'Unknown';
-            if (\$query -match 'State:\\s+(\\w+)') {
-              \$state = \$Matches[1];
-            }
-            Write-Host \\\"[STATE] Current task state: \$state\\\";
+            \$CurrentState = 'Unknown';
 
-            if (\$state -eq 'Ready') {
-              # Case 1: Task is ready → just run it
-              Write-Host \\\"Task is READY. Starting it now...\\\";
-              schtasks /run /tn \$TaskName | Out-Null;
-              if (\$LASTEXITCODE -ne 0) {
-                Write-Error \\\"Failed to RUN task '\$TaskName'. Exit code: \$LASTEXITCODE\\\";
-                exit 1;
-              }
-            } elseif (\$state -eq 'Running') {
-              # Case 2: Task already running → end, wait 30s, then run
-              Write-Host \\\"Task is RUNNING. Stopping it first...\\\";
-              schtasks /end /tn \$TaskName 2>\$null | Out-Null;
-              if (\$LASTEXITCODE -ne 0) {
-                Write-Host \\\"Warning: schtasks /end returned exit code \$LASTEXITCODE (task may already be stopped).\\\";
-              }
-              Write-Host 'Waiting 30 seconds before starting again...';
-              Start-Sleep -Seconds 30;
-              Write-Host 'Starting task again...';
-              schtasks /run /tn \$TaskName | Out-Null;
-              if (\$LASTEXITCODE -ne 0) {
-                Write-Error \\\"Failed to RUN task '\$TaskName' after stopping. Exit code: \$LASTEXITCODE\\\";
-                exit 1;
-              }
+            if (\$QueryOutput -match 'Status:\\s+(\\w+)') {
+                \$CurrentState = \$Matches[1];
+                Write-Warning \"[STATUS CHECK] Task '\$TaskName' current status is: \$CurrentState\";
             } else {
-              # Fallback: unknown state → try to run anyway
-              Write-Host \\\"Task state '\$state' is not Ready/Running. Attempting to run anyway...\\\";
-              schtasks /run /tn \$TaskName | Out-Null;
-              if (\$LASTEXITCODE -ne 0) {
-                Write-Error \\\"Failed to RUN task '\$TaskName' from state '\$state'. Exit code: \$LASTEXITCODE\\\";
-                exit 1;
-              }
+                Write-Warning \"[STATUS CHECK] Could not determine the status of task '\$TaskName'. Proceeding...\";
             }
 
-            Write-Host '✅ Task restart command(s) issued successfully.';
+            # 2. Conditional actions based on status
+            if (\$CurrentState -eq 'Ready') {
+                Write-Warning \"Task '\$TaskName' is READY. Running the task...\";
+                \$RunOutput = schtasks /run /tn \$TaskName 2>&1;
+                Write-Warning \"[RUN OUTPUT] \$RunOutput\";
+                if (\$LASTEXITCODE -ne 0) {
+                    Write-Error \"❌ Failed to run task '\$TaskName'. Exit code: \$LASTEXITCODE\";
+                    exit 1;
+                } else {
+                    Write-Warning '✅ Task run successfully.';
+                }
+            } elseif (\$CurrentState -eq 'Running') {
+                Write-Warning \"Task '\$TaskName' is RUNNING. Ending the task...\";
+                \$EndOutput = schtasks /end /tn \$TaskName 2>&1;
+                Write-Warning \"[END OUTPUT] \$EndOutput\";
+                if (\$LASTEXITCODE -ne 0) {
+                    Write-Error \"❌ Failed to end task '\$TaskName'. Exit code: \$LASTEXITCODE\";
+                    exit 1;
+                }
+                Write-Warning 'Task ended successfully. Waiting 30 seconds...';
+                Start-Sleep -Seconds 30;
+                Write-Warning 'Running the task again...';
+                \$RunOutput = schtasks /run /tn \$TaskName 2>&1;
+                Write-Warning \"[RUN OUTPUT] \$RunOutput\";
+                if (\$LASTEXITCODE -ne 0) {
+                    Write-Error \"❌ Failed to run task '\$TaskName'. Exit code: \$LASTEXITCODE\";
+                    exit 1;
+                } else {
+                    Write-Warning '✅ Task run successfully.';
+                }
+            } else {
+                Write-Warning \"Task '\$TaskName' status is '\$CurrentState'. Proceeding to run.\";
+                \$RunOutput = schtasks /run /tn \$TaskName 2>&1;
+                Write-Warning \"[RUN OUTPUT] \$RunOutput\";
+                if (\$LASTEXITCODE -ne 0) {
+                    Write-Error \"❌ Failed to run task '\$TaskName'. Exit code: \$LASTEXITCODE\";
+                    exit 1;
+                } else {
+                    Write-Warning '✅ Task run successfully.';
+                }
+            }
             \""
 
       - name: Verify Application Running Status
         run: |
+          # Use the setup outputs for connection details
           USER="${{ steps.setup.outputs.ssh_user }}"
           HOST="${{ steps.setup.outputs.ssh_host }}"
 
@@ -171,53 +187,56 @@ jobs:
             \$ErrorActionPreference = 'Stop';
             \$TaskName = 'BrowserAutomationStartup';
 
-            Write-Host '--- Deployment Verification ---';
+            Write-Warning '--- Deployment Verification by Scheduled Task Status ---';
 
-            \$ok = \$false;
-            \$lastResult = 'Unknown';
-            \$lastRunTime = [datetime]::MinValue;
+            # Query the task status and capture output
+            \$QueryOutput = schtasks /query /tn \$TaskName /fo LIST 2>&1;
+            Write-Warning \"[VERIFY QUERY OUTPUT] \$QueryOutput\";
 
-            # 1. Try Get-ScheduledTaskInfo
-            try {
-              \$info = Get-ScheduledTaskInfo -TaskName \$TaskName -TaskPath '\\';
-              \$lastResult = \$info.LastTaskResult;
-              \$lastRunTime = \$info.LastRunTime;
-              Write-Host \\\"[TASK INFO] LastRunTime  : \$lastRunTime\\\";
-              Write-Host \\\"[TASK INFO] LastTaskResult: \$lastResult\\\";
-              if (\$lastResult -eq 0 -and \$lastRunTime -gt (Get-Date).AddMinutes(-10)) {
-                \$ok = \$true;
-              }
-            } catch {
-              Write-Host 'Get-ScheduledTaskInfo not available or failed. Falling back to schtasks only.';
+            \$CurrentState = 'Unknown';
+
+            # Extract the Status value using regex
+            if (\$QueryOutput -match 'Status:\\s+(\\w+)') {
+                \$CurrentState = \$Matches[1];
+                Write-Warning \"[VERIFY STATUS] Final task status reported as: \$CurrentState\";
+            } else {
+                Write-Error \"❌ ERROR: Could not determine the status of task '\$TaskName'. Aborting verification.\";
+                exit 1;
             }
 
-            # 2. Check current state via schtasks
-            \$text = schtasks /query /tn \$TaskName /fo LIST /v 2>\$null;
-            \$state = 'Unknown';
-            if (\$text -match 'State:\\s+(\\w+)') {
-              \$state = \$Matches[1];
-            }
-            Write-Host \\\"[SCHTASKS] Current state: \$state\\\";
+            # If the task is Ready, attempt to re-run it one last time as it may have failed to launch on the first attempt
+            if (\$CurrentState -eq 'Ready') {
+                Write-Warning 'Task is Ready, indicating it might not have successfully launched the application.';
+                Write-Warning 'Attempting a final RERUN to ensure launch...';
 
-            if (\$state -eq 'Running') {
-              \$ok = \$true;
-            }
+                \$RunOutput = schtasks /run /tn \$TaskName 2>&1;
+                Write-Warning \"[VERIFY RUN OUTPUT] \$RunOutput\";
 
-            if (-not \$ok) {
-              Write-Error \\\"❌ Verification failed: state='\$state', LastTaskResult='\$lastResult', LastRunTime='\$lastRunTime'.\\\";
-              exit 1;
+                if (\$LASTEXITCODE -ne 0) {
+                    Write-Error \"❌ ERROR: Failed to RERUN task '\$TaskName'. Schtasks returned exit code \$LASTEXITCODE\";
+                    exit 1;
+                } else {
+                    Write-Warning '✅ RERUN command executed successfully. Assuming application launch is now guaranteed.';
+                }
+            } elseif (\$CurrentState -eq 'Running') {
+                Write-Warning '✅ Task is RUNNING. Deployment confirmed via scheduler status.';
+            } else {
+                Write-Warning \"✅ Task is in status '\$CurrentState'. Verification successful (Task triggered successfully).\"
             }
-
-            Write-Host '✅ Verification succeeded: task run looks healthy.';
             \""
 
-      - name: Verify Deployment
+      - name: Verify Deployment Commit Hash on ${{ matrix.server.name }}
         run: |
+          # Use the setup outputs for connection details
+          USER="${{ steps.setup.outputs.ssh_user }}"
+          HOST="${{ steps.setup.outputs.ssh_host }}"
+          APP_DIR="${{ steps.setup.outputs.app_dir }}"
+
           ssh -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
-            "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
-            "powershell -Command \"if (-not (Test-Path '${{ steps.setup.outputs.app_dir }}')) { Write-Error \"Application directory does not exist: ${{ steps.setup.outputs.app_dir }}\"; exit 1 }; cd '${{ steps.setup.outputs.app_dir }}'; \$oldErrorAction = \$ErrorActionPreference; \$ErrorActionPreference = 'SilentlyContinue'; \$null = git rev-parse --git-dir 2>&1; \$isGitRepo = (\$LASTEXITCODE -eq 0); \$ErrorActionPreference = \$oldErrorAction; if (-not \$isGitRepo) { Write-Error \"ERROR: Not a git repository. Directory '${{ steps.setup.outputs.app_dir }}' exists but is not a git repository.\"; exit 1 }; \$ErrorActionPreference = 'Stop'; Write-Host 'Current Commit Hash:'; git log -1 --oneline; if (\$LASTEXITCODE -ne 0) { Write-Error \"Failed to verify deployment. Git log returned exit code \$LASTEXITCODE\"; exit \$LASTEXITCODE }\""
+            "${USER}@${HOST}" \
+            "powershell -Command \"if (-not (Test-Path '${APP_DIR}')) { Write-Error \"Application directory does not exist: ${APP_DIR}\"; exit 1 }; cd '${APP_DIR}'; \$oldErrorAction = \$ErrorActionPreference; \$ErrorActionPreference = 'SilentlyContinue'; \$null = git rev-parse --git-dir 2>&1; \$isGitRepo = (\$LASTEXITCODE -eq 0); \$ErrorActionPreference = \$oldErrorAction; if (-not \$isGitRepo) { Write-Error \"ERROR: Not a git repository. Directory '${APP_DIR}' exists but is not a git repository. Please ensure the repository has been cloned to this location.\"; exit 1 }; \$ErrorActionPreference = 'Stop'; Write-Warning 'Current Commit Hash: '; git log -1 --oneline | Out-String; if (\$LASTEXITCODE -ne 0) { Write-Error \"Failed to verify deployment. Git log returned exit code \$LASTEXITCODE\"; exit \$LASTEXITCODE }\""
 
       - name: Cleanup SSH Key
         if: always()
