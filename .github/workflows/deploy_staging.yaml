@@ -92,6 +92,7 @@ jobs:
 
       - name: Pull Latest Code on ${{ matrix.server.name }}
         run: |
+          sleep 30
           ssh -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
@@ -102,6 +103,7 @@ jobs:
         # Triggers the pre-existing Scheduled Task using schtasks /run via cmd.exe.
         id: start
         run: |
+          sleep 40 # Wait to ensure previous processes have fully terminated
           USER="${{ steps.setup.outputs.ssh_user }}"
           HOST="${{ steps.setup.outputs.ssh_host }}"
           TASK_NAME="BrowserAutomationStartup" # The name of the scheduled task you want to run
@@ -132,7 +134,7 @@ jobs:
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             "${USER}@${HOST}" \
             "powershell -Command \"
-              \$LogFile = '${APP_DIR}\app_startup.log';
+              \$LogFile = '${APP_DIR}\startup.log';
               if (Test-Path \$LogFile) {
                 Write-Host '--- START OF APPLICATION LOG ---' -ForegroundColor Blue
                 Get-Content \$LogFile -Tail 20
