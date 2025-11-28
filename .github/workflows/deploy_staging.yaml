@@ -83,7 +83,7 @@ jobs:
           USER="${{ steps.setup.outputs.ssh_user }}"
           HOST="${{ steps.setup.outputs.ssh_host }}"
           APP_DIR="${{ steps.setup.outputs.app_dir }}"
-              
+
           ssh -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
@@ -92,7 +92,7 @@ jobs:
               \$pythonProcess = Get-Process -Name python -ErrorAction SilentlyContinue; \
               if (\$pythonProcess) { \
                 Write-Warning 'Python process found. Stopping...'; \
-                New-Item -ItemType File -Path '${{ steps.setup.outputs.app_dir }}\logs\STOP' -Force | Out-Null; \
+                New-Item -ItemType File -Path '${{ steps.setup.outputs.app_dir }}\logs\STOP' -Force \
                 Stop-Process -Name python -Force; \
                 Write-Warning 'Python process stopped successfully.'; \
                 exit 0; \
