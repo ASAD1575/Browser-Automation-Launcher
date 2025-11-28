@@ -88,7 +88,7 @@ jobs:
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             "${USER}@${HOST}" \
-            "powershell -Command \"\$ErrorActionPreference = 'Stop'; \$pythonProcess = Get-Process -Name python -ErrorAction SilentlyContinue; if (\$pythonProcess) { Write-Warning 'Python process found. Stopping...'; Stop-Process -Name python -Force; Write-Warning 'Python process stopped successfully.' } else { Write-Warning 'INFO: Python process was not running.' }\""
+            "powershell -Command \"\$ErrorActionPreference = 'Stop'; \$pythonProcess = Get-Process -Name python -ErrorAction SilentlyContinue; if (\$pythonProcess) { Write-Warning 'Python process found. Stopping...'; New-Item -ItemType File -Path '${{ steps.setup.outputs.app_dir }}\logs\STOP'; Stop-Process -Name python -Force; Write-Warning 'Python process stopped successfully.' } else { Write-Warning 'INFO: Python process was not running.' }\""
 
       - name: Pull Latest Code on ${{ matrix.server.name }}
         run: |
@@ -101,6 +101,9 @@ jobs:
       # - name: Start Application (Detached with Logging)
       #   id: start
       #   run: |
+      #     echo "Sleeping 30 seconds before starting application to ensure clean state..."
+      #     sleep 30
+
       #     USER="${{ steps.setup.outputs.ssh_user }}"
       #     HOST="${{ steps.setup.outputs.ssh_host }}"
       #     APP_DIR="${{ steps.setup.outputs.app_dir }}"
