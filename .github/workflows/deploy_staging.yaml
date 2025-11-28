@@ -90,47 +90,47 @@ jobs:
             "${USER}@${HOST}" \
             "powershell -Command \"\$ErrorActionPreference = 'Stop'; \$pythonProcess = Get-Process -Name python -ErrorAction SilentlyContinue; if (\$pythonProcess) { Write-Warning 'Python process found. Stopping...'; Stop-Process -Name python -Force; Write-Warning 'Python process stopped successfully.' } else { Write-Warning 'INFO: Python process was not running.' }\""
 
-      # - name: Pull Latest Code on ${{ matrix.server.name }}
-      #   # Use explicit path for git executable for robustness.
-      #   run: |
-      #     # Use the setup outputs for connection details
-      #     USER="${{ steps.setup.outputs.ssh_user }}"
-      #     HOST="${{ steps.setup.outputs.ssh_host }}"
-      #     APP_DIR="${{ steps.setup.outputs.app_dir }}"
+      - name: Pull Latest Code on ${{ matrix.server.name }}
+        # Use explicit path for git executable for robustness.
+        run: |
+          # Use the setup outputs for connection details
+          USER="${{ steps.setup.outputs.ssh_user }}"
+          HOST="${{ steps.setup.outputs.ssh_host }}"
+          APP_DIR="${{ steps.setup.outputs.app_dir }}"
           
-      #     # NOTE: We use the full path 'C:\Program Files\Git\bin\git.exe' for robustness
-      #     ssh -i ~/.ssh/deploy_key \
-      #       -o StrictHostKeyChecking=no \
-      #       -o UserKnownHostsFile=~/.ssh/known_hosts \
-      #       "${USER}@${HOST}" \
-      #       "powershell -Command \"
-      #         \$GitExe = 'C:\Program Files\Git\bin\git.exe';
+          # NOTE: We use the full path 'C:\Program Files\Git\bin\git.exe' for robustness
+          ssh -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=~/.ssh/known_hosts \
+            "${USER}@${HOST}" \
+            "powershell -Command \"
+              \$GitExe = 'C:\Program Files\Git\bin\git.exe';
               
-      #         if (-not (Test-Path '${APP_DIR}')) { Write-Error \"Application directory does not exist: ${APP_DIR}\"; exit 1 }; 
-      #         cd '${APP_DIR}'; 
+              if (-not (Test-Path '${APP_DIR}')) { Write-Error \"Application directory does not exist: ${APP_DIR}\"; exit 1 }; 
+              cd '${APP_DIR}'; 
               
-      #         \$oldErrorAction = \$ErrorActionPreference; 
-      #         \$ErrorActionPreference = 'SilentlyContinue'; 
-      #         & \"\$GitExe\" rev-parse --git-dir 2>&1 | Out-String; 
-      #         \$isGitRepo = (\$LASTEXITCODE -eq 0); 
-      #         \$ErrorActionPreference = \$oldErrorAction; 
+              \$oldErrorAction = \$ErrorActionPreference; 
+              \$ErrorActionPreference = 'SilentlyContinue'; 
+              & \"\$GitExe\" rev-parse --git-dir 2>&1 | Out-String; 
+              \$isGitRepo = (\$LASTEXITCODE -eq 0); 
+              \$ErrorActionPreference = \$oldErrorAction; 
               
-      #         if (-not \$isGitRepo) { 
-      #           Write-Error \"ERROR: Not a git repository. Directory '${APP_DIR}' exists but is not a git repository. Please ensure the repository has been cloned to this location.\"; 
-      #           exit 1 
-      #         }; 
+              if (-not \$isGitRepo) { 
+                Write-Error \"ERROR: Not a git repository. Directory '${APP_DIR}' exists but is not a git repository. Please ensure the repository has been cloned to this location.\"; 
+                exit 1 
+              }; 
               
-      #         \$ErrorActionPreference = 'Stop'; 
-      #         Write-Warning 'Pulling latest code from staging branch...'; 
-      #         & \"\$GitExe\" pull origin staging; 
+              \$ErrorActionPreference = 'Stop'; 
+              Write-Warning 'Pulling latest code from staging branch...'; 
+              & \"\$GitExe\" pull origin staging; 
               
-      #         if (\$LASTEXITCODE -ne 0) { 
-      #           Write-Error \"Git pull failed with exit code \$LASTEXITCODE\"; 
-      #           exit \$LASTEXITCODE 
-      #         } else { 
-      #           Write-Warning 'Code pull successful.' 
-      #         }
-      #       \""
+              if (\$LASTEXITCODE -ne 0) { 
+                Write-Error \"Git pull failed with exit code \$LASTEXITCODE\"; 
+                exit \$LASTEXITCODE 
+              } else { 
+                Write-Warning 'Code pull successful.' 
+              }
+            \""
 
       # - name: Start Application (Detached with Logging)
       #   id: start
