@@ -75,57 +75,57 @@ jobs:
           echo "ssh_user=${{ env.SSH_USER }}" >> $GITHUB_OUTPUT
           echo "app_dir=${{ env.APP_DIR }}" >> $GITHUB_OUTPUT
 
-      - name: Stop Application on ${{ matrix.server.name }}
-        # This step is critical: it kills the old process before we start a new one.
-        run: |
-          echo "Stopping existing application process on server ${{ matrix.server.name }} if running..."
-          # Use the setup outputs for connection details
-          USER="${{ steps.setup.outputs.ssh_user }}"
-          HOST="${{ steps.setup.outputs.ssh_host }}"
-          APP_DIR="${{ steps.setup.outputs.app_dir }}"
-          
-          ssh -i ~/.ssh/deploy_key \
-            -o StrictHostKeyChecking=no \
-            -o UserKnownHostsFile=~/.ssh/known_hosts \
-            "${USER}@${HOST}" \
-            "powershell -Command \"\$ErrorActionPreference = 'Stop'; \$pythonProcess = Get-Process -Name python -ErrorAction SilentlyContinue; if (\$pythonProcess) { Write-Warning 'Python process found. Stopping...'; New-Item -ItemType File -Path '${{ steps.setup.outputs.app_dir }}\logs\STOP'; Stop-Process -Name python -Force; Write-Warning 'Python process stopped successfully.' } else { Write-Warning 'INFO: Python process was not running.' }\""
-
-      - name: Pull Latest Code on ${{ matrix.server.name }}
-        run: |
-          ssh -i ~/.ssh/deploy_key \
-            -o StrictHostKeyChecking=no \
-            -o UserKnownHostsFile=~/.ssh/known_hosts \
-            "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
-            "powershell -Command \"if (-not (Test-Path '${{ steps.setup.outputs.app_dir }}')) { Write-Error \"Application directory does not exist: ${{ steps.setup.outputs.app_dir }}\"; exit 1 }; cd '${{ steps.setup.outputs.app_dir }}'; \$oldErrorAction = \$ErrorActionPreference; \$ErrorActionPreference = 'SilentlyContinue'; \$null = git rev-parse --git-dir 2>&1; \$isGitRepo = (\$LASTEXITCODE -eq 0); \$ErrorActionPreference = \$oldErrorAction; if (-not \$isGitRepo) { Write-Error \"ERROR: Not a git repository. Directory '${{ steps.setup.outputs.app_dir }}' exists but is not a git repository. Please ensure the repository has been cloned to this location.\"; exit 1 }; \$ErrorActionPreference = 'Stop'; git pull origin staging; if (\$LASTEXITCODE -ne 0) { Write-Error \"Git pull failed with exit code \$LASTEXITCODE\"; exit \$LASTEXITCODE }\""
-
-      # - name: Start Application (Trigger Scheduled Task)
-      #   # UPDATED: Now triggers the named scheduled task instead of running a script directly.
-      #   id: start
+      # - name: Stop Application on ${{ matrix.server.name }}
+      #   # This step is critical: it kills the old process before we start a new one.
       #   run: |
+      #     echo "Stopping existing application process on server ${{ matrix.server.name }} if running..."
+      #     # Use the setup outputs for connection details
       #     USER="${{ steps.setup.outputs.ssh_user }}"
       #     HOST="${{ steps.setup.outputs.ssh_host }}"
-          
-      #     echo "Triggering Scheduled Task 'BrowserAutomationStartup' for detached start..."
+      #     APP_DIR="${{ steps.setup.outputs.app_dir }}"
           
       #     ssh -i ~/.ssh/deploy_key \
       #       -o StrictHostKeyChecking=no \
       #       -o UserKnownHostsFile=~/.ssh/known_hosts \
       #       "${USER}@${HOST}" \
-      #       "powershell -Command \"
-      #       \$ErrorActionPreference = 'Stop';
-      #       \$TaskName = 'BrowserAutomationStartup';
+      #       "powershell -Command \"\$ErrorActionPreference = 'Stop'; \$pythonProcess = Get-Process -Name python -ErrorAction SilentlyContinue; if (\$pythonProcess) { Write-Warning 'Python process found. Stopping...'; New-Item -ItemType File -Path '${{ steps.setup.outputs.app_dir }}\logs\STOP'; Stop-Process -Name python -Force; Write-Warning 'Python process stopped successfully.' } else { Write-Warning 'INFO: Python process was not running.' }\""
+
+      # - name: Pull Latest Code on ${{ matrix.server.name }}
+      #   run: |
+      #     ssh -i ~/.ssh/deploy_key \
+      #       -o StrictHostKeyChecking=no \
+      #       -o UserKnownHostsFile=~/.ssh/known_hosts \
+      #       "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
+      #       "powershell -Command \"if (-not (Test-Path '${{ steps.setup.outputs.app_dir }}')) { Write-Error \"Application directory does not exist: ${{ steps.setup.outputs.app_dir }}\"; exit 1 }; cd '${{ steps.setup.outputs.app_dir }}'; \$oldErrorAction = \$ErrorActionPreference; \$ErrorActionPreference = 'SilentlyContinue'; \$null = git rev-parse --git-dir 2>&1; \$isGitRepo = (\$LASTEXITCODE -eq 0); \$ErrorActionPreference = \$oldErrorAction; if (-not \$isGitRepo) { Write-Error \"ERROR: Not a git repository. Directory '${{ steps.setup.outputs.app_dir }}' exists but is not a git repository. Please ensure the repository has been cloned to this location.\"; exit 1 }; \$ErrorActionPreference = 'Stop'; git pull origin staging; if (\$LASTEXITCODE -ne 0) { Write-Error \"Git pull failed with exit code \$LASTEXITCODE\"; exit \$LASTEXITCODE }\""
+
+      - name: Start Application (Trigger Scheduled Task)
+        # UPDATED: Now triggers the named scheduled task instead of running a script directly.
+        id: start
+        run: |
+          USER="${{ steps.setup.outputs.ssh_user }}"
+          HOST="${{ steps.setup.outputs.ssh_host }}"
+          
+          echo "Triggering Scheduled Task 'BrowserAutomationStartup' for detached start..."
+          
+          ssh -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=~/.ssh/known_hosts \
+            "${USER}@${HOST}" \
+            "powershell -Command \"
+            \$ErrorActionPreference = 'Stop';
+            \$TaskName = 'BrowserAutomationStartup';
             
-      #       # Use schtasks to trigger the task
-      #       \$SchtasksResult = schtasks /run /tn \$TaskName 2>&1
+            # Use schtasks to trigger the task
+            \$SchtasksResult = schtasks /run /tn \$TaskName 2>&1
             
-      #       if (\$LASTEXITCODE -ne 0 -or \$SchtasksResult -match 'ERROR') {
-      #         Write-Error \"❌ Failed to trigger scheduled task '\$TaskName'. Output: \$SchtasksResult\" -ForegroundColor Red;
-      #         exit 1;
-      #       } else {
-      #         Write-Host \"✅ Scheduled task '\$TaskName' triggered successfully.\" -ForegroundColor Green;
-      #       }
-      #       \""
-      #     echo "Scheduled task trigger command successfully executed on remote server."
+            if (\$LASTEXITCODE -ne 0 -or \$SchtasksResult -match 'ERROR') {
+              Write-Error \"❌ Failed to trigger scheduled task '\$TaskName'. Output: \$SchtasksResult\" -ForegroundColor Red;
+              exit 1;
+            } else {
+              Write-Host \"✅ Scheduled task '\$TaskName' triggered successfully.\" -ForegroundColor Green;
+            }
+            \""
+          echo "Scheduled task trigger command successfully executed on remote server."
 
       # - name: Display Startup Logs on ${{ matrix.server.name }}
       #   run: |
