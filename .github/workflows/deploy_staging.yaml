@@ -75,28 +75,28 @@ jobs:
           echo "ssh_user=${{ env.SSH_USER }}" >> $GITHUB_OUTPUT
           echo "app_dir=${{ env.APP_DIR }}" >> $GITHUB_OUTPUT
 
-      # - name: Stop Application on ${{ matrix.server.name }}
-      #   # This step is critical: it kills the old process before we start a new one.
-      #   run: |
-      #     echo "Stopping existing application process on server ${{ matrix.server.name }} if running..."
-      #     # Use the setup outputs for connection details
-      #     USER="${{ steps.setup.outputs.ssh_user }}"
-      #     HOST="${{ steps.setup.outputs.ssh_host }}"
-      #     APP_DIR="${{ steps.setup.outputs.app_dir }}"
+      - name: Stop Application on ${{ matrix.server.name }}
+        # This step is critical: it kills the old process before we start a new one.
+        run: |
+          echo "Stopping existing application process on server ${{ matrix.server.name }} if running..."
+          # Use the setup outputs for connection details
+          USER="${{ steps.setup.outputs.ssh_user }}"
+          HOST="${{ steps.setup.outputs.ssh_host }}"
+          APP_DIR="${{ steps.setup.outputs.app_dir }}"
           
-      #     ssh -i ~/.ssh/deploy_key \
-      #       -o StrictHostKeyChecking=no \
-      #       -o UserKnownHostsFile=~/.ssh/known_hosts \
-      #       "${USER}@${HOST}" \
-      #       "powershell -Command \"\$ErrorActionPreference = 'Stop'; \$pythonProcess = Get-Process -Name python -ErrorAction SilentlyContinue; if (\$pythonProcess) { Write-Warning 'Python process found. Stopping...'; New-Item -ItemType File -Path '${{ steps.setup.outputs.app_dir }}\logs\STOP'; Stop-Process -Name python -Force; Write-Warning 'Python process stopped successfully.' } else { Write-Warning 'INFO: Python process was not running.' }\""
+          ssh -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=~/.ssh/known_hosts \
+            "${USER}@${HOST}" \
+            "powershell -Command \"\$ErrorActionPreference = 'Stop'; \$pythonProcess = Get-Process -Name python -ErrorAction SilentlyContinue; if (\$pythonProcess) { Write-Warning 'Python process found. Stopping...'; New-Item -ItemType File -Path '${{ steps.setup.outputs.app_dir }}\logs\STOP'; Stop-Process -Name python -Force; Write-Warning 'Python process stopped successfully.' } else { Write-Warning 'INFO: Python process was not running.' }\""
 
-      # - name: Pull Latest Code on ${{ matrix.server.name }}
-      #   run: |
-      #     ssh -i ~/.ssh/deploy_key \
-      #       -o StrictHostKeyChecking=no \
-      #       -o UserKnownHostsFile=~/.ssh/known_hosts \
-      #       "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
-      #       "powershell -Command \"if (-not (Test-Path '${{ steps.setup.outputs.app_dir }}')) { Write-Error \"Application directory does not exist: ${{ steps.setup.outputs.app_dir }}\"; exit 1 }; cd '${{ steps.setup.outputs.app_dir }}'; \$oldErrorAction = \$ErrorActionPreference; \$ErrorActionPreference = 'SilentlyContinue'; \$null = git rev-parse --git-dir 2>&1; \$isGitRepo = (\$LASTEXITCODE -eq 0); \$ErrorActionPreference = \$oldErrorAction; if (-not \$isGitRepo) { Write-Error \"ERROR: Not a git repository. Directory '${{ steps.setup.outputs.app_dir }}' exists but is not a git repository. Please ensure the repository has been cloned to this location.\"; exit 1 }; \$ErrorActionPreference = 'Stop'; git pull origin staging; if (\$LASTEXITCODE -ne 0) { Write-Error \"Git pull failed with exit code \$LASTEXITCODE\"; exit \$LASTEXITCODE }\""
+      - name: Pull Latest Code on ${{ matrix.server.name }}
+        run: |
+          ssh -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=~/.ssh/known_hosts \
+            "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
+            "powershell -Command \"if (-not (Test-Path '${{ steps.setup.outputs.app_dir }}')) { Write-Error \"Application directory does not exist: ${{ steps.setup.outputs.app_dir }}\"; exit 1 }; cd '${{ steps.setup.outputs.app_dir }}'; \$oldErrorAction = \$ErrorActionPreference; \$ErrorActionPreference = 'SilentlyContinue'; \$null = git rev-parse --git-dir 2>&1; \$isGitRepo = (\$LASTEXITCODE -eq 0); \$ErrorActionPreference = \$oldErrorAction; if (-not \$isGitRepo) { Write-Error \"ERROR: Not a git repository. Directory '${{ steps.setup.outputs.app_dir }}' exists but is not a git repository. Please ensure the repository has been cloned to this location.\"; exit 1 }; \$ErrorActionPreference = 'Stop'; git pull origin staging; if (\$LASTEXITCODE -ne 0) { Write-Error \"Git pull failed with exit code \$LASTEXITCODE\"; exit \$LASTEXITCODE }\""
 
       - name: Start Application on ${{ matrix.server.name }}
         # Triggers the pre-existing Scheduled Task using schtasks /run via cmd.exe.
@@ -116,33 +116,32 @@ jobs:
             
           echo "Scheduled Task run command sent. The application should now be launching in a detached process."
 
-      # - name: Display Startup Logs on ${{ matrix.server.name }}
-      #   run: |
-      #     echo "Waiting 5 seconds for application to initialize and write logs..."
-      #     sleep 5 # Give the server time to fully start and write its "running" message
+      - name: Display Startup Logs on ${{ matrix.server.name }}
+        run: |
+          echo "Waiting 5 seconds for application to initialize and write logs..."
+          sleep 5 # Give the server time to fully start and write its "running" message
           
-      #     USER="${{ steps.setup.outputs.ssh_user }}"
-      #     HOST="${{ steps.setup.outputs.ssh_host }}"
-      #     APP_DIR="${{ steps.setup.outputs.app_dir }}"
+          USER="${{ steps.setup.outputs.ssh_user }}"
+          HOST="${{ steps.setup.outputs.ssh_host }}"
+          APP_DIR="${{ steps.setup.outputs.app_dir }}"
           
-      #     echo "Fetching last 20 lines of application logs..."
+          echo "Fetching last 20 lines of application logs..."
           
-      #     ssh -i ~/.ssh/deploy_key \
-      #       -o StrictHostKeyChecking=no \
-      #       -o UserKnownHostsFile=~/.ssh/known_hosts \
-      #       "${USER}@${HOST}" \
-      #       "powershell -Command \"
-      #         \$LogFile = '${APP_DIR}\app_startup.log';
-      #         if (Test-Path \$LogFile) {
-      #           Write-Host '--- START OF APPLICATION LOG ---' -ForegroundColor Blue
-      #           Get-Content \$LogFile -Tail 20
-      #           Write-Host '--- END OF APPLICATION LOG ---' -ForegroundColor Blue
-      #         } else {
-      #           Write-Warning 'WARNING: Log file not found at \$LogFile.' -ForegroundColor Yellow
-      #         }
-      #       \""
-      #     echo "Log display complete."
-
+          ssh -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=~/.ssh/known_hosts \
+            "${USER}@${HOST}" \
+            "powershell -Command \"
+              \$LogFile = '${APP_DIR}\app_startup.log';
+              if (Test-Path \$LogFile) {
+                Write-Host '--- START OF APPLICATION LOG ---' -ForegroundColor Blue
+                Get-Content \$LogFile -Tail 20
+                Write-Host '--- END OF APPLICATION LOG ---' -ForegroundColor Blue
+              } else {
+                Write-Warning 'WARNING: Log file not found at \$LogFile.' -ForegroundColor Yellow
+              }
+            \""
+          echo "Log display complete."
 
       - name: Verify Application Process (Real-time Polling)
         # Fixes from last turn included: use robust 'tasklist' and '|| true' for retry logic.
@@ -169,12 +168,12 @@ jobs:
 
               # Check if the output contains the process name (meaning it's running)
               if echo "$CHECK_RESULT" | grep -i "${PROCESS_NAME}.exe"; then
-                  echo "✅ Process '${PROCESS_NAME}' found running on the VM."
+                  echo "Process '${PROCESS_NAME}' found running on the VM."
                   exit 0 # Success, exit the step successfully
               fi
           done
 
-          echo "❌ TIMEOUT: Application process '${PROCESS_NAME}' not found running after $(($MAX_ATTEMPTS * $WAIT_SECONDS)) seconds."
+          echo "TIMEOUT: Application process '${PROCESS_NAME}' not found running after $(($MAX_ATTEMPTS * $WAIT_SECONDS)) seconds."
           exit 1
 
       - name: Verify Deployment Commit Hash on ${{ matrix.server.name }}
@@ -215,7 +214,7 @@ jobs:
               & \"\$GitExe\" log -1 --oneline | Out-String; 
               
               if (\$LASTEXITCODE -ne 0) { 
-                Write-Error \"❌ Failed to verify deployment. Git log returned exit code \$LASTEXITCODE\"; 
+                Write-Error \"Failed to verify deployment. Git log returned exit code \$LASTEXITCODE\"; 
                 exit \$LASTEXITCODE 
               }
             \""
