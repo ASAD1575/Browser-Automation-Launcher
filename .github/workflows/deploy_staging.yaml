@@ -133,8 +133,8 @@ jobs:
           set -e
           USER="${{ steps.setup.outputs.ssh_user }}"
           HOST="${{ steps.setup.outputs.ssh_host }}"
-          MAX_ATTEMPTS=5   # Max wait time of 5 * 60 = 350 seconds
-          WAIT_SECONDS=60
+          MAX_ATTEMPTS=3   # Max wait time of 5 * 60 = 350 seconds
+          WAIT_SECONDS=10
           PROCESS_NAME='python'
 
           echo "Starting real-time polling for process '${PROCESS_NAME}'..."
