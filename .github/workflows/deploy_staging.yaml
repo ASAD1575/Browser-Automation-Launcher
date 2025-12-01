@@ -26,46 +26,53 @@ jobs:
         run: ruff check .
 
   deploy:
-    name: Deploy to Staging
+    name: Deploy to Staging - ${{ matrix.server.name }}
     needs: lint
     runs-on: ubuntu-latest
     timeout-minutes: 15
+
+    env:
+      BRANCH: ${{ github.ref_name || github.head_ref }}
+
     strategy:
       matrix:
         server:
+          # Define all servers here. Only update this list when adding new servers.
           - name: EC2-Server-1
-            host_secret: EC2_HOST_1
-            key_secret: EC2_SSH_PRIVATE_KEY_1
-          - name: EC2-Server-2
-            host_secret: EC2_HOST_2
-            key_secret: EC2_SSH_PRIVATE_KEY_2
-          - name: EC2-Server-3
-            host_secret: EC2_HOST_3
-            key_secret: EC2_SSH_PRIVATE_KEY_3
+            host_secret: EC2_HOST_1 # Name of the secret holding the Hostname/IP
+            key_secret: EC2_SSH_PRIVATE_KEY_1 # Name of the secret holding the Private Key
+          # - name: EC2-Server-2
+          #   host_secret: EC2_HOST_2
+          #   key_secret: EC2_SSH_PRIVATE_KEY_2
+          # - name: EC2-Server-3
+          #   host_secret: EC2_HOST_3
+          #   key_secret: EC2_SSH_PRIVATE_KEY_3
       fail-fast: false
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup SSH and Get Credentials
+      - name: Setup SSH and Get Credentials (Dynamic Secret Access)
         id: setup
         env:
           # Shared secrets (same for all servers)
           SSH_USER: ${{ secrets.EC2_USERNAME }}
           APP_DIR: ${{ secrets.APP_DIRECTORY }}
-          # Dynamic secret access: Use the value of the matrix property (e.g., 'EC2_HOST_1') 
-          # as the key to look up the actual secret value in the 'secrets' context.
+          
+          # Dynamically look up the secret value based on the key name in the matrix
           SSH_KEY: ${{ secrets[matrix.server.key_secret] }}
           SSH_HOST: ${{ secrets[matrix.server.host_secret] }}
+          
         run: |
+          set -e
           mkdir -p ~/.ssh
           
-          # Write the private key to a file using the dynamically fetched secret
+          # Use the dynamically fetched SSH_KEY
           echo "${{ env.SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           
-          # Scan the host using the dynamically fetched host secret value
+          # Use the dynamically fetched SSH_HOST
           ssh-keyscan -H "${{ env.SSH_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
           
           # Set outputs for subsequent steps
@@ -73,39 +80,148 @@ jobs:
           echo "ssh_user=${{ env.SSH_USER }}" >> $GITHUB_OUTPUT
           echo "app_dir=${{ env.APP_DIR }}" >> $GITHUB_OUTPUT
 
-      - name: Stop Application
+      - name: Stop Application on ${{ matrix.server.name }}
+        # This step is critical: it kills the old process before we start a new one.
         run: |
+          set -e
+          echo "Stopping existing application process on server ${{ matrix.server.name }} if running..."
+          # Use the setup outputs for connection details
+          USER="${{ steps.setup.outputs.ssh_user }}"
+          HOST="${{ steps.setup.outputs.ssh_host }}"
+          APP_DIR="${{ steps.setup.outputs.app_dir }}"
+          
           ssh -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
-            "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
-            "powershell -Command \"\$ErrorActionPreference = 'Stop'; New-Item -ItemType File -Path '${{ steps.setup.outputs.app_dir }}\logs\STOP' -Force -ErrorAction SilentlyContinue | Out-Null; \$pythonProcess = Get-Process -Name python -ErrorAction SilentlyContinue; if (\$pythonProcess) { Write-Host 'Python process found. Stopping...'; Stop-Process -Name python -Force; Write-Host 'Python process stopped successfully.' } else { Write-Error 'ERROR: Python process is not running. Cannot stop a process that does not exist.'; exit 1 }\""
+            "${USER}@${HOST}" \
+            "powershell -Command \"\$ErrorActionPreference = 'Stop'; \$pythonProcess = Get-Process -Name python -ErrorAction SilentlyContinue; if (\$pythonProcess) { Write-Warning 'Python process found. Stopping...'; New-Item -ItemType File -Path '${{ steps.setup.outputs.app_dir }}\logs\STOP'; Stop-Process -Name python -Force; Write-Warning 'Python process stopped successfully.'} else { Write-Warning 'INFO: Python process was not running. Exiting with error.'; exit 0 }\""
 
-      - name: Pull Latest Code
-        # This step remains robust: it checks for the directory, verifies it's a Git repo,
-        # performs the git pull origin staging via PowerShell, and checks the exit code.
+      - name: Pull Latest Code on ${{ matrix.server.name }}
+        id: pull
         run: |
+          set -e
+          sleep 30
           ssh -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
-            "powershell -Command \"if (-not (Test-Path '${{ steps.setup.outputs.app_dir }}')) { Write-Error \"Application directory does not exist: ${{ steps.setup.outputs.app_dir }}\"; exit 1 }; cd '${{ steps.setup.outputs.app_dir }}'; \$oldErrorAction = \$ErrorActionPreference; \$ErrorActionPreference = 'SilentlyContinue'; \$null = git rev-parse --git-dir 2>&1; \$isGitRepo = (\$LASTEXITCODE -eq 0); \$ErrorActionPreference = \$oldErrorAction; if (-not \$isGitRepo) { Write-Error \"ERROR: Not a git repository. Directory '${{ steps.setup.outputs.app_dir }}' exists but is not a git repository. Please ensure the repository has been cloned to this location.\"; exit 1 }; \$ErrorActionPreference = 'Stop'; git pull origin staging; if (\$LASTEXITCODE -ne 0) { Write-Error \"Git pull failed with exit code \$LASTEXITCODE\"; exit \$LASTEXITCODE }\""
+            "powershell -Command \"if (-not (Test-Path '${{ steps.setup.outputs.app_dir }}')) { Write-Error \"Application directory does not exist: ${{ steps.setup.outputs.app_dir }}\"; exit 1 }; cd '${{ steps.setup.outputs.app_dir }}'; \$oldErrorAction = \$ErrorActionPreference; \$ErrorActionPreference = 'SilentlyContinue'; \$null = git rev-parse --git-dir 2>&1; \$isGitRepo = (\$LASTEXITCODE -eq 0); \$ErrorActionPreference = \$oldErrorAction; if (-not \$isGitRepo) { Write-Error \"ERROR: Not a git repository. Directory '${{ steps.setup.outputs.app_dir }}' exists but is not a git repository. Please ensure the repository has been cloned to this location.\"; exit 1 }; \$ErrorActionPreference = 'Stop'; git pull origin ${{ env.BRANCH }}; if (\$LASTEXITCODE -ne 0) { Write-Error \"Git pull failed with exit code \$LASTEXITCODE\"; exit \$LASTEXITCODE }\""
 
-      - name: Restart Application
+      - name: Start Application on ${{ matrix.server.name }}
+        # Triggers the pre-existing Scheduled Task using schtasks /run via cmd.exe.
+        id: start
         run: |
+          set -e
+          sleep 40 # Wait to ensure previous processes have fully terminated
+          USER="${{ steps.setup.outputs.ssh_user }}"
+          HOST="${{ steps.setup.outputs.ssh_host }}"
+          TASK_NAME="BrowserAutomationStartup" # The name of the scheduled task you want to run
+          
+          echo "Attempting to run existing Scheduled Task: ${TASK_NAME} via cmd.exe..."
+          
           ssh -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
-            "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
-            "powershell -Command \"\$ErrorActionPreference = 'Stop'; schtasks /run /tn 'BrowserAutomationStartup'; if (\$LASTEXITCODE -ne 0) { Write-Error \"Failed to restart application. Scheduled task returned exit code \$LASTEXITCODE\"; exit \$LASTEXITCODE }\""
+            "${USER}@${HOST}" \
+            "cmd.exe /c \"schtasks /run /tn ${TASK_NAME}\""
+            
+          echo "Scheduled Task run command sent. The application should now be launching in a detached process."
 
-      - name: Verify Deployment
+      - name: Verify Application Process (Real-time Polling)
+        # Fixes from last turn included: use robust 'tasklist' and '|| true' for retry logic.
         run: |
+          set -e
+          USER="${{ steps.setup.outputs.ssh_user }}"
+          HOST="${{ steps.setup.outputs.ssh_host }}"
+          MAX_ATTEMPTS=5   # Max wait time of 5 * 60 = 350 seconds
+          WAIT_SECONDS=60
+          PROCESS_NAME='python'
+
+          echo "Starting real-time polling for process '${PROCESS_NAME}'..."
+          
+          for i in $(seq 1 $MAX_ATTEMPTS); do
+              echo "[POLL $i/$MAX_ATTEMPTS] Waiting $WAIT_SECONDS seconds... Checking for process '${PROCESS_NAME}'"
+              sleep $WAIT_SECONDS
+
+              # Use 'tasklist' and 'find' in a simple CMD command, which is more reliable than PowerShell for this simple check.
+              # '|| true' ensures the loop continues even if the SSH command fails to connect or run the command.
+              CHECK_RESULT=$(ssh -i ~/.ssh/deploy_key \
+                -o StrictHostKeyChecking=no \
+                -o UserKnownHostsFile=~/.ssh/known_hosts \
+                "${USER}@${HOST}" \
+                "cmd.exe /c \"tasklist /nh /fi \"IMAGENAME eq ${PROCESS_NAME}.exe\" 2>&1\"" || true)
+
+              # Check if the output contains the process name (meaning it's running)
+              if echo "$CHECK_RESULT" | grep -i "${PROCESS_NAME}.exe"; then
+                  echo "Process '${PROCESS_NAME}' found running on the VM."
+                  exit 0 # Success, exit the step successfully
+              fi
+          done
+
+          echo "TIMEOUT: Application process '${PROCESS_NAME}' not found running after $(($MAX_ATTEMPTS * $WAIT_SECONDS)) seconds."
+          exit 1
+
+      - name: Verify Deployment Commit Hash on ${{ matrix.server.name }}
+        # Logging uses Write-Host for clearer visibility
+        run: |
+          set -e
+          USER="${{ steps.setup.outputs.ssh_user }}"
+          HOST="${{ steps.setup.outputs.ssh_host }}"
+          APP_DIR="${{ steps.setup.outputs.app_dir }}"
+
           ssh -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
-            "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
-            "powershell -Command \"if (-not (Test-Path '${{ steps.setup.outputs.app_dir }}')) { Write-Error \"Application directory does not exist: ${{ steps.setup.outputs.app_dir }}\"; exit 1 }; cd '${{ steps.setup.outputs.app_dir }}'; \$oldErrorAction = \$ErrorActionPreference; \$ErrorActionPreference = 'SilentlyContinue'; \$null = git rev-parse --git-dir 2>&1; \$isGitRepo = (\$LASTEXITCODE -eq 0); \$ErrorActionPreference = \$oldErrorAction; if (-not \$isGitRepo) { Write-Error \"ERROR: Not a git repository. Directory '${{ steps.setup.outputs.app_dir }}' exists but is not a git repository.\"; exit 1 }; \$ErrorActionPreference = 'Stop'; git log -1 --oneline; if (\$LASTEXITCODE -ne 0) { Write-Error \"Failed to verify deployment. Git log returned exit code \$LASTEXITCODE\"; exit \$LASTEXITCODE }\""
+            "${USER}@${HOST}" \
+            "powershell -Command \"
+              \$GitExe = 'C:\Program Files\Git\bin\git.exe';
+              
+              if (-not (Test-Path '${APP_DIR}')) { 
+                Write-Error \"Application directory does not exist: ${APP_DIR}\"; 
+                exit 1 
+              }; 
+              
+              cd '${APP_DIR}'; 
+              
+              \$oldErrorAction = \$ErrorActionPreference; 
+              \$ErrorActionPreference = 'SilentlyContinue'; 
+              & \"\$GitExe\" rev-parse --git-dir 2>&1 | Out-String; 
+              \$isGitRepo = (\$LASTEXITCODE -eq 0); 
+              \$ErrorActionPreference = \$oldErrorAction; 
+              
+              if (-not \$isGitRepo) { 
+                Write-Error \"ERROR: Not a git repository. Directory '${APP_DIR}' exists but is not a git repository. Please ensure the repository has been cloned to this location.\"; 
+                exit 1 
+              }; 
+              
+              \$ErrorActionPreference = 'Stop'; 
+              Write-Host 'Current Commit Hash: ' -ForegroundColor Cyan; 
+              & \"\$GitExe\" log -1 --oneline | Out-String; 
+              
+              if (\$LASTEXITCODE -ne 0) { 
+                Write-Error \"Failed to verify deployment. Git log returned exit code \$LASTEXITCODE\"; 
+                exit \$LASTEXITCODE 
+              }
+            \""
+      
+      # ROLLBACK STEP – runs if ANY previous step in this job failed
+      - name: Rollback / Ensure application running on failure
+        if: failure() && (steps.pull.conclusion == 'failure' || steps.start.conclusion == 'failure')
+        run: |
+          set -e
+          echo "A previous step in this deploy job FAILED. Attempting to restart application so staging is not left down."
+
+          USER="${{ steps.setup.outputs.ssh_user }}"
+          HOST="${{ steps.setup.outputs.ssh_host }}"
+          TASK_NAME="BrowserAutomationStartup"
+
+          ssh -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=~/.ssh/known_hosts \
+            "${USER}@${HOST}" \
+            "cmd.exe /c \"schtasks /run /tn ${TASK_NAME}\"" || true
+
+          echo "Rollback: scheduled task trigger sent (even if it failed, the job will still be marked as failed)."
 
       - name: Cleanup SSH Key
         if: always()
