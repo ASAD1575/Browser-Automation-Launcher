@@ -97,6 +97,7 @@ jobs:
             "powershell -Command \"\$ErrorActionPreference = 'Stop'; \$pythonProcess = Get-Process -Name python -ErrorAction SilentlyContinue; if (\$pythonProcess) { Write-Warning 'Python process found. Stopping...'; New-Item -ItemType File -Path '${{ steps.setup.outputs.app_dir }}\logs\STOP'; Stop-Process -Name python -Force; Write-Warning 'Python process stopped successfully.'} else { Write-Warning 'INFO: Python process was not running. Exiting with error.'; exit 0 }\""
 
       - name: Pull Latest Code on ${{ matrix.server.name }}
+        id: pull
         run: |
           set -e
           sleep 30
@@ -205,7 +206,7 @@ jobs:
       
       # ROLLBACK STEP – runs if ANY previous step in this job failed
       - name: Rollback / Ensure application running on failure
-        if: failure()
+        if: failure() && (steps.pull.conclusion == 'failure' || steps.start.conclusion == 'failure')
         run: |
           set -e
           echo "A previous step in this deploy job FAILED. Attempting to restart application so staging is not left down."
