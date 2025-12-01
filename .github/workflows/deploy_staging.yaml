@@ -30,6 +30,10 @@ jobs:
     needs: lint
     runs-on: ubuntu-latest
     timeout-minutes: 15
+
+    env:
+      BRANCH: ${{ github.ref_name || github.head_ref }}
+
     strategy:
       matrix:
         server:
@@ -61,6 +65,7 @@ jobs:
           SSH_HOST: ${{ secrets[matrix.server.host_secret] }}
           
         run: |
+          set -e
           mkdir -p ~/.ssh
           
           # Use the dynamically fetched SSH_KEY
@@ -78,6 +83,7 @@ jobs:
       - name: Stop Application on ${{ matrix.server.name }}
         # This step is critical: it kills the old process before we start a new one.
         run: |
+          set -e
           echo "Stopping existing application process on server ${{ matrix.server.name }} if running..."
           # Use the setup outputs for connection details
           USER="${{ steps.setup.outputs.ssh_user }}"
@@ -88,21 +94,23 @@ jobs:
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             "${USER}@${HOST}" \
-            "powershell -Command \"\$ErrorActionPreference = 'Stop'; \$pythonProcess = Get-Process -Name python -ErrorAction SilentlyContinue; if (\$pythonProcess) { Write-Warning 'Python process found. Stopping...'; New-Item -ItemType File -Path '${{ steps.setup.outputs.app_dir }}\logs\STOP'; Stop-Process -Name python -Force; Write-Warning 'Python process stopped successfully.'} else { Write-Warning 'INFO: Python process was not running. Exiting with error.'; exit 1 }\""
+            "powershell -Command \"\$ErrorActionPreference = 'Stop'; \$pythonProcess = Get-Process -Name python -ErrorAction SilentlyContinue; if (\$pythonProcess) { Write-Warning 'Python process found. Stopping...'; New-Item -ItemType File -Path '${{ steps.setup.outputs.app_dir }}\logs\STOP'; Stop-Process -Name python -Force; Write-Warning 'Python process stopped successfully.'} else { Write-Warning 'INFO: Python process was not running. Exiting with error.'; exit 0 }\""
 
       - name: Pull Latest Code on ${{ matrix.server.name }}
         run: |
+          set -e
           sleep 30
           ssh -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             "${{ steps.setup.outputs.ssh_user }}@${{ steps.setup.outputs.ssh_host }}" \
-            "powershell -Command \"if (-not (Test-Path '${{ steps.setup.outputs.app_dir }}')) { Write-Error \"Application directory does not exist: ${{ steps.setup.outputs.app_dir }}\"; exit 1 }; cd '${{ steps.setup.outputs.app_dir }}'; \$oldErrorAction = \$ErrorActionPreference; \$ErrorActionPreference = 'SilentlyContinue'; \$null = git rev-parse --git-dir 2>&1; \$isGitRepo = (\$LASTEXITCODE -eq 0); \$ErrorActionPreference = \$oldErrorAction; if (-not \$isGitRepo) { Write-Error \"ERROR: Not a git repository. Directory '${{ steps.setup.outputs.app_dir }}' exists but is not a git repository. Please ensure the repository has been cloned to this location.\"; exit 1 }; \$ErrorActionPreference = 'Stop'; git pull origin staging; if (\$LASTEXITCODE -ne 0) { Write-Error \"Git pull failed with exit code \$LASTEXITCODE\"; exit \$LASTEXITCODE }\""
+            "powershell -Command \"if (-not (Test-Path '${{ steps.setup.outputs.app_dir }}')) { Write-Error \"Application directory does not exist: ${{ steps.setup.outputs.app_dir }}\"; exit 1 }; cd '${{ steps.setup.outputs.app_dir }}'; \$oldErrorAction = \$ErrorActionPreference; \$ErrorActionPreference = 'SilentlyContinue'; \$null = git rev-parse --git-dir 2>&1; \$isGitRepo = (\$LASTEXITCODE -eq 0); \$ErrorActionPreference = \$oldErrorAction; if (-not \$isGitRepo) { Write-Error \"ERROR: Not a git repository. Directory '${{ steps.setup.outputs.app_dir }}' exists but is not a git repository. Please ensure the repository has been cloned to this location.\"; exit 1 }; \$ErrorActionPreference = 'Stop'; git pull origin ${{ env.BRANCH }}; if (\$LASTEXITCODE -ne 0) { Write-Error \"Git pull failed with exit code \$LASTEXITCODE\"; exit \$LASTEXITCODE }\""
 
       - name: Start Application on ${{ matrix.server.name }}
         # Triggers the pre-existing Scheduled Task using schtasks /run via cmd.exe.
         id: start
         run: |
+          set -e
           sleep 40 # Wait to ensure previous processes have fully terminated
           USER="${{ steps.setup.outputs.ssh_user }}"
           HOST="${{ steps.setup.outputs.ssh_host }}"
@@ -121,10 +129,11 @@ jobs:
       - name: Verify Application Process (Real-time Polling)
         # Fixes from last turn included: use robust 'tasklist' and '|| true' for retry logic.
         run: |
+          set -e
           USER="${{ steps.setup.outputs.ssh_user }}"
           HOST="${{ steps.setup.outputs.ssh_host }}"
-          MAX_ATTEMPTS=5   # Max wait time of 5 * 30 = 150 seconds
-          WAIT_SECONDS=30
+          MAX_ATTEMPTS=5   # Max wait time of 5 * 60 = 350 seconds
+          WAIT_SECONDS=60
           PROCESS_NAME='python'
 
           echo "Starting real-time polling for process '${PROCESS_NAME}'..."
@@ -154,7 +163,7 @@ jobs:
       - name: Verify Deployment Commit Hash on ${{ matrix.server.name }}
         # Logging uses Write-Host for clearer visibility
         run: |
-          
+          set -e
           USER="${{ steps.setup.outputs.ssh_user }}"
           HOST="${{ steps.setup.outputs.ssh_host }}"
           APP_DIR="${{ steps.setup.outputs.app_dir }}"
@@ -193,6 +202,25 @@ jobs:
                 exit \$LASTEXITCODE 
               }
             \""
+      
+      # ROLLBACK STEP – runs if ANY previous step in this job failed
+      - name: Rollback / Ensure application running on failure
+        if: failure()
+        run: |
+          set -e
+          echo "A previous step in this deploy job FAILED. Attempting to restart application so staging is not left down."
+
+          USER="${{ steps.setup.outputs.ssh_user }}"
+          HOST="${{ steps.setup.outputs.ssh_host }}"
+          TASK_NAME="BrowserAutomationStartup"
+
+          ssh -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=~/.ssh/known_hosts \
+            "${USER}@${HOST}" \
+            "cmd.exe /c \"schtasks /run /tn ${TASK_NAME}\"" || true
+
+          echo "Rollback: scheduled task trigger sent (even if it failed, the job will still be marked as failed)."
 
       - name: Cleanup SSH Key
         if: always()
