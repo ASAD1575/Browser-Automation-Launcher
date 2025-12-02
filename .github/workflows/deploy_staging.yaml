@@ -38,15 +38,15 @@ jobs:
       matrix:
         server:
           # Define all servers here. Only update this list when adding new servers.
-          # - name: EC2-Server-1
-          #   host_secret: EC2_HOST_1 # Name of the secret holding the Hostname/IP
-          #   key_secret: EC2_SSH_PRIVATE_KEY_1 # Name of the secret holding the Private Key
+          - name: EC2-Server-1
+            host_secret: EC2_HOST_1 # Name of the secret holding the Hostname/IP
+            key_secret: EC2_SSH_PRIVATE_KEY_1 # Name of the secret holding the Private Key
           # - name: EC2-Server-2
           #   host_secret: EC2_HOST_2
           #   key_secret: EC2_SSH_PRIVATE_KEY_2
-          - name: EC2-Server-3
-            host_secret: EC2_HOST_3
-            key_secret: EC2_SSH_PRIVATE_KEY_3
+          # - name: EC2-Server-3
+          #   host_secret: EC2_HOST_3
+          #   key_secret: EC2_SSH_PRIVATE_KEY_3
       fail-fast: false
 
     steps:
